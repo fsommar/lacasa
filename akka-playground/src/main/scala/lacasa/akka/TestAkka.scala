@@ -54,7 +54,7 @@ class SafeActorRef[T](private val ref: ActorRef) {
   }
 
   def tellContinue(msg: Box[T])
-                  (cont: NullarySpore[Unit] /*{ type Excluded = msg.C }*/) // TODO: Wait for spore fix
+                  (cont: () => Unit)
                   (implicit acc: CanAccess { type C = msg.C }): Nothing = {
     ref ! msg.pack()
     cont()
@@ -91,11 +91,11 @@ object TestAkka {
           }
         }
          */
-        a.tellContinue(box)(spore { () =>
+        a.tellContinue(box)({ () =>
           mkBox[Message] { packed =>
             implicit val access = packed.access
             val box: packed.box.type = packed.box
-            box.open(spore { obj =>
+            box.open({ obj =>
               obj.s = "test"
             })
             a ! box
