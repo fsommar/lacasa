@@ -113,8 +113,7 @@ object LaCasaBuild extends Build {
     commonSettings ++ usePluginSettings: _*
   ) settings (
     libraryDependencies <+= (scalaVersion)("org.scala-lang" % "scala-reflect" % _),
-    libraryDependencies += "com.typesafe.akka" %% "akka-actor" % "2.4.14",
-    publishArtifact in Compile := false
+    libraryDependencies += "com.typesafe.akka" %% "akka-actor" % "2.4.14"
   ) dependsOn(core)
 
 }
