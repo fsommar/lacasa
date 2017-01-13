@@ -3,32 +3,9 @@ package lacasa.akka
 import akka.actor.{Actor, ActorRef, ActorSystem, Props}
 import akka.event.{Logging, LoggingAdapter}
 
-import scala.spores._
 import lacasa.{Box, CanAccess, NoReturnControl, Packed, Safe}
 import Box.mkBox
 
-
-trait SafeActor[T] extends Actor {
-
-  // TODO: compiles even when commenting out the following implicit
-  implicit val loggingIsSafe = new Safe[LoggingAdapter] {}
-  implicit def safeActorIsSafe[X] = new Safe[SafeActor[X]] {}
-
-  def receive(msg: Box[T])(implicit acc: CanAccess { type C = msg.C }): Unit
-
-  final def receive: Receive = {
-    case packed: Packed[T] =>
-      try {
-        receive(packed.box)(packed.access)
-      } catch {
-        case nrc: NoReturnControl => /* do nothing */
-          Box.uncheckedCatchControl
-      }
-
-    case _ => // internal error
-  }
-
-}
 
 case class Message(var s: String) {
   def this() = this("")
@@ -38,33 +15,13 @@ class MyActor extends SafeActor[Message] {
   val log = Logging(context.system, this)
 
   def receive(msg: Box[Message])(implicit acc: CanAccess { type C = msg.C }): Unit = {
-    msg.open {
-      case Message("hello") => log.info("hello world")
-      case Message("test") => log.info("received test")
-      case _ => log.info("received unknown message")
-    }
+    msg.open({ (m: Message) =>
+      m match {
+        case Message("test") => log.info("received test")
+        case _ => log.info("received unknown message")
+      }
+    })
   }
-}
-
-class SafeActorRef[T](private val ref: ActorRef) {
-  def ! (msg: Box[T])(implicit acc: CanAccess { type C = msg.C }): Nothing = {
-    // have to create a `Packed[T]`
-    ref ! msg.pack()  // `pack()` accessible within package `lacasa`
-    throw new NoReturnControl
-  }
-
-  def tellContinue(msg: Box[T])
-                  (cont: () => Unit)
-                  (implicit acc: CanAccess { type C = msg.C }): Nothing = {
-    ref ! msg.pack()
-    cont()
-    throw new NoReturnControl
-  }
-}
-
-object SafeActorRef {
-  def apply[T](ref: ActorRef): SafeActorRef[T] =
-    new SafeActorRef[T](ref)
 }
 
 
@@ -78,29 +35,10 @@ object TestAkka {
       mkBox[Message] { packed =>
         implicit val access = packed.access
         val box: packed.box.type = packed.box
-        box.open(spore { obj =>
-          obj.s = "hello"
+        box.open({ obj =>
+          obj.s = "test"
         })
-        /*
-        // Possible syntax?
-        box(new Message("test")) { box =>
-          a.tellContinue(box) { a =>
-            box(new Message("test")) { box =>
-              a ! box
-            }
-          }
-        }
-         */
-        a.tellContinue(box)({ () =>
-          mkBox[Message] { packed =>
-            implicit val access = packed.access
-            val box: packed.box.type = packed.box
-            box.open({ obj =>
-              obj.s = "test"
-            })
-            a ! box
-          }
-        })
+        a ! box
       }
 
     } catch {
