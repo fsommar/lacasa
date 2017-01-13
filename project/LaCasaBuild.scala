@@ -9,7 +9,7 @@ object Dependencies {
 object LaCasaBuild extends Build {
 
   lazy val commonSettings = Defaults.defaultSettings ++ Seq(
-    scalaVersion := "2.11.8", // neg tests only work on 2.11 atm
+    scalaVersion := "2.11.7", // neg tests only work on 2.11 atm
     crossVersion := CrossVersion.full,
     version := "0.1.0-SNAPSHOT",
     organization := "io.github.phaller",
@@ -106,9 +106,9 @@ object LaCasaBuild extends Build {
     commonSettings ++ usePluginSettings: _*
   ) dependsOn(core)
 
-  lazy val akkaPlayground = Project(
-    id   = "akka-playground",
-    base = file("akka-playground")
+  lazy val akka = Project(
+    id   = "lacasa-akka",
+    base = file("akka")
   ) settings (
     commonSettings ++ usePluginSettings: _*
   ) settings (
