@@ -58,6 +58,17 @@ class SafeActorRef[T](private val ref: ActorRef) {
     throw new NoReturnControl
   }
 
+  /**
+   * A simplification of the regular send, which automatically creates a box,
+   * provided that `msg` is valid to box, and sends it.
+   */
+  def >!< (msg: => T)(implicit ev: Safe[T]): Nothing = {
+    Box.mkBoxOf(msg) { packed =>
+      implicit val acc = packed.access
+      this ! packed.box
+    }
+  }
+
   def sendAndThen(msg: Box[T])(cont: () => Unit)(implicit acc: CanAccess { type C = msg.C }): Nothing = {
     // have to create a `Packed[T]`
     ref ! msg.pack()  // `pack()` accessible within package `lacasa`
