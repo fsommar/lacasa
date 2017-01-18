@@ -5,6 +5,7 @@ import akka.event.LoggingAdapter
 
 import lacasa.{Box, CanAccess, Safe, Packed, NoReturnControl}
 
+private case object LaCasaInitMessage
 
 trait SafeActor[T] extends Actor {
 
@@ -12,8 +13,17 @@ trait SafeActor[T] extends Actor {
   implicit val loggingIsSafe = new Safe[LoggingAdapter] {}
 
   def receive(msg: Box[T])(implicit acc: CanAccess { type C = msg.C }): Unit
+  def init(): Unit = {}
 
-  def receive = {
+  final def receive = {
+    case LaCasaInitMessage =>
+      try {
+        init()
+      } catch {
+        case _: NoReturnControl =>
+          Box.uncheckedCatchControl
+      }
+
     case packed: Packed[T] =>
       try {
         receive(packed.box)(packed.access)
@@ -34,9 +44,14 @@ object SafeActorRef {
   def apply[T](ref: ActorRef): SafeActorRef[T] =
     new SafeActorRef[T](ref)
 
+  def init[T](ref: SafeActorRef[T]): Unit = {
+    ref.ref ! LaCasaInitMessage
+  }
+
 }
 
 class SafeActorRef[T](private val ref: ActorRef) {
+
   def ! (msg: Box[T])(implicit acc: CanAccess { type C = msg.C }): Nothing = {
     // have to create a `Packed[T]`
     ref ! msg.pack()  // `pack()` accessible within package `lacasa`
