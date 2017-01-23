@@ -1,7 +1,11 @@
 package lacasa.akka
 
+import scala.concurrent.{ExecutionContext, Future}
+import scala.language.implicitConversions
+
 import akka.actor.{Actor, ActorRef}
 import akka.event.LoggingAdapter
+import akka.util.Timeout
 
 import lacasa.{Box, CanAccess, Safe, Packed, NoReturnControl}
 
@@ -77,6 +81,19 @@ class SafeActorRef[T](private val ref: ActorRef) {
     // have to create a `Packed[T]`
     ref ! msg.pack()  // `pack()` accessible within package `lacasa`
     cont()
+    throw new NoReturnControl
+  }
+
+  def ask(msg: Box[T])(cont: Future[T] => Unit)
+         (implicit timeout: Timeout, ec: ExecutionContext,
+          ev: Safe[T], acc: CanAccess { type C = msg.C }): Nothing = {
+    // The cast should be okay as the receiver (this), only can receive messages of type `T`;
+    // the `Future` contains a message of type `T` at runtime.
+    val future = akka.pattern.ask(ref, msg.pack()).map { case packed: Packed[T] =>
+      implicit val acc = packed.access
+      packed.box.extract(identity)
+    }
+    cont(future)
     throw new NoReturnControl
   }
 }
