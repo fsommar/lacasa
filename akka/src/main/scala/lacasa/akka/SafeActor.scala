@@ -9,8 +9,12 @@ private case object LaCasaInitMessage
 
 trait SafeActor[T] extends Actor {
 
+  implicit def actorRefToSafeActorRef(actorRef: ActorRef) = SafeActorRef[T](actorRef)
+
   // TODO: compiles even when commenting out the following implicit
   implicit val loggingIsSafe = new Safe[LoggingAdapter] {}
+
+  protected final val safeSelf: SafeActorRef[T] = self
 
   def receive(msg: Box[T])(implicit acc: CanAccess { type C = msg.C }): Unit
   def init(): Unit = {}
