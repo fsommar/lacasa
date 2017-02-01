@@ -70,7 +70,7 @@ class SafeActorRef[T](private val ref: ActorRef) {
    * A simplification of the regular send, which automatically creates a box,
    * provided that `msg` is valid to box, and sends it.
    */
-  def >!< (msg: => T)(implicit ev: Safe[T]): Nothing = {
+  def ! (msg: T)(implicit ev: Safe[T]): Nothing = {
     Box.mkBoxOf(msg) { packed =>
       implicit val acc = packed.access
       this ! packed.box

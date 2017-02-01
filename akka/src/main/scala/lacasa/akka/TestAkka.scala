@@ -27,7 +27,7 @@ class MyActor extends SafeActor[Message] {
   val askActor = SafeActorRef[Message](context.system.actorOf(Props[MyAskActor]))
 
   override def init() = {
-    self >!< new Message("init")
+    self ! new Message("init")
   }
 
   def receive(box: Box[Message])(implicit acc: CanAccess { type C = box.C }): Unit = {
@@ -57,7 +57,7 @@ class MyAskActor extends SafeActor[Message] {
     msg match {
       case Message("ask") =>
         log.info("received ask msg")
-        sender() >!< new Message("response")
+        sender() ! new Message("response")
       case _ => log.info("received unknown message")
     }
   }
