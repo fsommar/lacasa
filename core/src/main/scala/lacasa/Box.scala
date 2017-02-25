@@ -89,6 +89,9 @@ object Safe {
   implicit val stringIsSafe: Safe[String] = new Safe[String] {}
   implicit def actorRefIsSafe[T]: Safe[ActorRef[T]] = new Safe[ActorRef[T]] {}
   implicit def tuple2IsSafe[T, S](implicit one: Safe[T], two: Safe[S]): Safe[(T, S)] = new Safe[(T, S)] {}
+  implicit def optionIsSafe[T: Safe]: Safe[Option[T]] = new Safe[Option[T]] {}
+  // This should enable the user to send a single None value without having to cast it to an Option[T: Safe].
+  implicit val noneIsSafe: Safe[None.type] = new Safe[None.type] {}
 }
 
 sealed class Box[+T] private (private val instance: T) {
