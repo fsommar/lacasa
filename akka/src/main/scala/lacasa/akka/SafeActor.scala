@@ -15,6 +15,14 @@ private case class SafeWrapper[T](value: T) {
   implicit val safeEv: Safe[T] = implicitly
 }
 
+object ActorRef {
+  implicit def actorRefToSafeActorRef(actorRef: AkkaActorRef) = ActorRef(actorRef)
+  implicit val safeActorRefIsSafe: Safe[ActorRef] = new Safe[ActorRef] {}
+
+  def apply(ref: AkkaActorRef): ActorRef =
+    new ActorRef(ref)
+}
+
 object Actor {
   implicit val poisonPillIsSafe: Safe[PoisonPill] = new Safe[PoisonPill] {}
   implicit val terminatedIsSafe: Safe[Terminated] = new Safe[Terminated] {}
@@ -23,93 +31,79 @@ object Actor {
 trait Actor extends AkkaActor {
   import Actor._
 
-  implicit def actorRefToSafeActorRef(actorRef: AkkaActorRef) = ActorRef(actorRef)
-
   // TODO: compiles even when commenting out the following implicit
   implicit val loggingIsSafe = new Safe[LoggingAdapter] {}
 
   protected final val safeSelf: ActorRef = self
+  protected final def safeSender: ActorRef = sender
 
-  def receive(msg: Box[Any])(implicit acc: CanAccess { type C = msg.C }): Unit
-
-
-  // In the event that we get an unrecognizable message, it can potentially
-  // be a system message. E.g., `Terminated` (from context.watch) or `PoisonPill`.
-  //
-  // I haven't found a good way to generically support these types of messages yet.
-  // They are therefore hardcoded here. It's not particularly pretty, nor robust.
-  final override def receive: Receive = {
-    case packed: Packed[_] =>
-      receivePacked(packed)
-
-    case x: SafeWrapper[_] =>
-      implicit val valueIsSafe = x.safeEv
-      receiveSafe(x.value)
-
-    case x: PoisonPill =>
-      receiveSystem(x)
-
-    case x: Terminated =>
-      receiveSystem(x)
-
-    case x =>
-      receiveUnknown(x)
-  }
-
-  private[actor] def receivePacked[T](packed: Packed[T]) = {
-    try {
-      receive(packed.box)(packed.access)
-    } catch {
-      case _: NoReturnControl => /* do nothing */
-        Box.uncheckedCatchControl
-    }
-  }
-
-  private[actor] def receiveSafe[T: Safe](msg: T) = {
-    try {
-      Box.mkBoxOf(msg) { packed =>
-        receive(packed.box)(packed.access)
-      }
-    } catch {
-      case _: NoReturnControl =>
-        Box.uncheckedCatchControl
-    }
-  }
-
-  private[actor] def receiveSystem[T: Safe](msg: T) = {
-    receiveSafe(msg)
-  }
-
-  private[actor] def receiveUnknown(msg: Any) = {}
-}
-
-object ActorRef {
-
-  implicit val safeActorRefIsSafe: Safe[ActorRef] = new Safe[ActorRef] {}
-
-  def apply(ref: AkkaActorRef): ActorRef =
-    new ActorRef(ref)
-
-}
-
-trait SafeReceive { self: Actor =>
-
-  override def receiveSafe[T: Safe](msg: T) = {
-    safeReceive(msg)
-  }
-
-  /**
-   * This serves as a direct replacement to the standard Akka `receive` method.
-   */
-  def safeReceive: Receive
-
-  /**
-   * Override this method if you want to both receive Safe and boxed messages.
-   */
   def receive(msg: Box[Any])(implicit acc: CanAccess { type C = msg.C }): Unit = {
     val contents = msg.extract(x => (if (x == null) "" else x).toString)
     throw new UnsupportedOperationException(s"Got unexpected Box($contents). Did you forget to mark it as Safe?")
   }
+
+  /** AKKA INTERNAL API */
+  override def aroundReceive(receive: Receive, msg: Any): Unit = {
+    // In the event that we get an unrecognizable message, it can potentially
+    // be a system message. E.g., `Terminated` (from context.watch) or `PoisonPill`.
+    //
+    // I haven't found a good way to generically support these types of messages yet.
+    // They are therefore hardcoded here. It's not particularly pretty, nor robust.
+    msg match {
+      case packed: Packed[_] =>
+        receivePacked(receive, packed)
+
+      case x: SafeWrapper[_] =>
+        implicit val ev = x.safeEv
+        receiveSafe(receive, x.value)
+
+      case x: PoisonPill =>
+        receiveSystem(receive, x)
+
+      case x: Terminated =>
+        receiveSystem(receive, x)
+
+      case x =>
+        receiveUnknown(receive, x)
+    }
+  }
+
+  private[actor] def receivePacked[T](_receive: Receive, packed: Packed[T]) = {
+    Box.unsafe {
+      receive(packed.box)(packed.access)
+    }
+  }
+
+  private[actor] def receiveSafe[T: Safe](receive: Receive, msg: T) = {
+    super.aroundReceive(receive, msg)
+  }
+
+  private[actor] def receiveSystem[T: Safe](receive: Receive, msg: T) = {
+    receiveSafe(receive, msg)
+  }
+
+  private[actor] def receiveUnknown(_receive: Receive, msg: Any) = {
+    throw new UnsupportedOperationException(s"Got unsupported message $msg."
+      + " Did you accidentally send a message via an Akka ActorRef?")
+  }
+}
+
+/**
+ * By mixing in this trait, all Safe messages will be passed along
+ * to the box receive method, along with boxed messages.
+ */
+trait OnlyBoxReceive { self: Actor =>
+
+  private[actor] override def receiveSafe[T: Safe](_receive: Receive, msg: T) = {
+    Box.unsafe {
+      Box.mkBoxOf(msg) { packed =>
+        receive(packed.box)(packed.access)
+      }
+    }
+  }
+
+  def receive: Receive = PartialFunction.empty
+
 }
 
 class ActorRef(private[actor] val ref: AkkaActorRef) {
@@ -173,6 +167,16 @@ class ActorRef(private[actor] val ref: AkkaActorRef) {
     future.map {
       case SafeWrapper(value) =>
         value
+      case _: Packed[_] =>
+        throw new UnsupportedOperationException("Expected Safe value return from ask, got boxed value."
+          + " Did you mean to use `ask[T](msg: Box[T])`?")
+      case x =>
+        throw new UnsupportedOperationException(s"Expected Safe value returned from ask, got $x."
+          + " Did you accidentally use `sender` instead of `safeSender`?")
     }
+  }
+
+  def ? [T: Safe](msg: T)(implicit context: ActorContext, timeout: Timeout): Future[Any] = {
+    this.ask(msg)
   }
 }

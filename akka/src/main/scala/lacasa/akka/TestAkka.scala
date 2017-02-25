@@ -11,7 +11,7 @@ import akka.util.Timeout
 import lacasa.{Box, CanAccess, NoReturnControl, Packed, Safe}
 import Box._
 
-import lacasa.akka.actor.{Actor, ActorRef, SafeReceive}
+import lacasa.akka.actor.{Actor, ActorRef, OnlyBoxReceive}
 
 
 case class Message(s: String) {
@@ -22,11 +22,11 @@ object Message {
   implicit val messageIsSafe = new Safe[Message]{}
 }
 
-class MyActor extends Actor {
+class MyActor extends Actor with OnlyBoxReceive {
   val log = Logging(context.system, this)
   val askActor: ActorRef = context.system.actorOf(Props[MyAskActor])
 
-  def receive(box: Box[Any])(implicit acc: CanAccess { type C = box.C }): Unit = {
+  override def receive(box: Box[Any])(implicit acc: CanAccess { type C = box.C }): Unit = {
     val msg = box.extract { case msg: Message => msg }
     msg match {
       case Message("buffered") => log.info("got buffered message")
@@ -34,7 +34,7 @@ class MyActor extends Actor {
       case Message("init") =>
         log.info("received msg from init")
         implicit val timeout = Timeout(1 seconds)
-        self ! new Message("buffered")
+        safeSelf ! new Message("buffered")
         val future = askActor.ask(new Message("ask"))
         val res = Await.result(future, 1 seconds)
         log.info(s"Got $res")
@@ -43,13 +43,13 @@ class MyActor extends Actor {
   }
 }
 
-class MyAskActor extends Actor with SafeReceive {
+class MyAskActor extends Actor {
   val log = Logging(context.system, this)
 
-  override def safeReceive: Receive = {
+  override def receive: Receive = {
     case Message("ask") =>
       log.info("received ask msg")
-      sender() ! new Message("response")
+      safeSender ! new Message("response")
       log.info("sent response msg")
     case _ => log.info("received unknown message")
   }
