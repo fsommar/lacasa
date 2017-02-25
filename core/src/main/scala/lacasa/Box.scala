@@ -49,6 +49,21 @@ object Box {
   // marker method as escape hatch for ControlThrowable checker
   def uncheckedCatchControl: Unit = {}
 
+  /**
+   * WARNING, UNSAFE!
+   *
+   * Wraps an unsafe call to e.g. mkBox, and allows continued execution afterwards.
+   * Only use this if you know what you're doing!
+   */
+  def unsafe(body: => Unit): Unit = {
+    try {
+      body
+    } catch {
+      case _: NoReturnControl =>
+        uncheckedCatchControl
+    }
+  }
+
   /* for internal use only! */
   private[lacasa] def make[T](init: T): Box[T] = {
     def internal[S]: Box[T] = {
