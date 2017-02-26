@@ -34,7 +34,7 @@ class MyActor extends Actor with OnlyBoxReceive {
       case Message("init") =>
         log.info("received msg from init")
         implicit val timeout = Timeout(1 seconds)
-        safeSelf ! new Message("buffered")
+        ctx.self ! new Message("buffered")
         val future = askActor.ask(new Message("ask"))
         val res = Await.result(future, 1 seconds)
         log.info(s"Got $res")
@@ -49,7 +49,7 @@ class MyAskActor extends Actor {
   override def receive: Receive = {
     case Message("ask") =>
       log.info("received ask msg")
-      safeSender ! new Message("response")
+      ctx.sender ! new Message("response")
       log.info("sent response msg")
     case _ => log.info("received unknown message")
   }

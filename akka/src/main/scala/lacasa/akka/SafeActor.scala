@@ -1,10 +1,13 @@
 package lacasa.akka.actor
 
-import scala.concurrent.{ExecutionContext, Future}
+import scala.collection.immutable
+import scala.concurrent.{ExecutionContext, ExecutionContextExecutor, Future}
+import scala.concurrent.duration.Duration
 import scala.language.implicitConversions
 import scala.reflect.runtime.universe._
 
-import akka.actor.{Actor => AkkaActor, ActorContext, ActorRef => AkkaActorRef, PoisonPill, Terminated}
+import akka.actor.{Actor => AkkaActor, ActorContext => AkkaActorContext, ActorRef => AkkaActorRef,
+                   PoisonPill, Terminated, ActorCell, ActorSystem, Props}
 import akka.event.LoggingAdapter
 import akka.util.Timeout
 
@@ -28,17 +31,64 @@ object Actor {
   implicit val terminatedIsSafe: Safe[Terminated] = new Safe[Terminated] {}
 }
 
+object ActorContext {
+  implicit def actorContextToSafeActorContext(actorContext: AkkaActorContext) = new ActorContext(actorContext)
+  implicit def safeActorContextToActorContext(actorContext: ActorContext) = actorContext.unsafe
+}
+
+class ActorContext private (val unsafe: AkkaActorContext) {
+  implicit def dispatcher: ExecutionContextExecutor = unsafe.dispatcher
+  // implicit def system: ActorSystem = unsafe.system
+
+  def become(behavior: AkkaActor.Receive, discardOld: Boolean): Unit = {
+    unsafe.become(behavior, discardOld)
+  }
+
+  def child(name: String): Option[ActorRef] = {
+    unsafe.child(name).map(ActorRef(_))
+  }
+
+  def children: immutable.Iterable[ActorRef] = {
+    unsafe.children.map(ActorRef(_))
+  }
+
+  def parent: ActorRef = {
+    unsafe.parent
+  }
+
+  def self: ActorRef = {
+    unsafe.self
+  }
+
+  def sender(): ActorRef = {
+    unsafe.sender()
+  }
+
+  def unwatch(subject: ActorRef): ActorRef = {
+    unsafe.unwatch(subject.ref)
+  }
+
+  def watch(subject: ActorRef): ActorRef = {
+    unsafe.watch(subject.ref)
+  }
+
+  def stop(actor: ActorRef): Unit = {
+    unsafe.stop(actor.ref)
+  }
+}
+
 trait Actor extends AkkaActor {
   import Actor._
 
   // TODO: compiles even when commenting out the following implicit
   implicit val loggingIsSafe = new Safe[LoggingAdapter] {}
 
-  protected final val safeSelf: ActorRef = self
-  protected final def safeSender: ActorRef = sender
+  implicit val ctx: ActorContext = context
+  final val safeSelf: ActorRef = ctx.self
+  final def safeSender: ActorRef = ctx.sender
 
   def receive(msg: Box[Any])(implicit acc: CanAccess { type C = msg.C }): Unit = {
-    val contents = msg.extract(x => (if (x == null) "" else x).toString)
+    val contents = msg.extract(x => s"$x")
     throw new UnsupportedOperationException(s"Got unexpected Box($contents). Did you forget to mark it as Safe?")
   }
 
@@ -127,7 +177,7 @@ class ActorRef(private[actor] val ref: AkkaActorRef) {
   }
 
   def forward[T: Safe](msg: T)(implicit context: ActorContext): Unit = {
-    ref.forward(new SafeWrapper(msg))
+    ref.forward(new SafeWrapper(msg))(context.unsafe)
   }
 
   def sendAndThen[T](msg: Box[T])(cont: () => Unit)(implicit acc: CanAccess { type C = msg.C }): Nothing = {
