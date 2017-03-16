@@ -104,12 +104,14 @@ object Safe {
   implicit def optionIsSafe[T: Safe]: Safe[Option[T]] = new Safe[Option[T]] {}
   // This should enable the user to send a single None value without having to cast it to an Option[T: Safe].
   implicit val noneIsSafe: Safe[None.type] = new Safe[None.type] {}
+
 }
 
 sealed class Box[+T] private (private[lacasa] val instance: T) {
   self =>
 
   type C
+  type Access = CanAccess { type C = self.C }
 
   // trusted operation
   private[lacasa] def pack(): Packed[T] = {
@@ -125,7 +127,7 @@ sealed class Box[+T] private (private[lacasa] val instance: T) {
     self
   }
 
-  def extract[S: Safe](fun: Function[T, S])(implicit access: CanAccess { type C = self.C }): S = {
+  def extract[S: Safe](fun: Function[T, S])(implicit access: Access): S = {
     fun(instance)
   }
 

@@ -11,7 +11,7 @@ import akka.actor.{Actor => AkkaActor, ActorContext => AkkaActorContext, ActorRe
 import akka.event.LoggingAdapter
 import akka.util.Timeout
 
-import lacasa.{Box, CanAccess, Safe, Packed, NoReturnControl}
+import lacasa.{Box, Safe, Packed, NoReturnControl}
 
 
 private[akka] case class SafeWrapper[T](value: T) {
@@ -87,7 +87,7 @@ trait Actor extends AkkaActor {
   final val safeSelf: ActorRef = ctx.self
   final def safeSender: ActorRef = ctx.sender
 
-  def receive(msg: Box[Any])(implicit acc: CanAccess { type C = msg.C }): Unit = {
+  def receive(msg: Box[Any])(implicit acc: msg.Access): Unit = {
     val contents = msg.extract(x => s"$x")
     throw new UnsupportedOperationException(s"Got unexpected Box($contents). Did you forget to mark it as Safe?")
   }
@@ -158,7 +158,7 @@ trait OnlyBoxReceive { self: Actor =>
 
 class ActorRef(private[akka] val ref: AkkaActorRef) {
 
-  def !! [T](msg: Box[T])(implicit acc: CanAccess { type C = msg.C }): Nothing = {
+  def !! [T](msg: Box[T])(implicit acc: msg.Access): Nothing = {
     // have to create a `Packed[T]`
     ref ! msg.pack()  // `pack()` accessible within package `lacasa`
     throw new NoReturnControl
@@ -176,11 +176,15 @@ class ActorRef(private[akka] val ref: AkkaActorRef) {
     ref ! new SafeWrapper(msg)
   }
 
-  def forward[T: Safe](msg: T)(implicit context: ActorContext): Unit = {
-    ref.forward(new SafeWrapper(msg))(context.unsafe)
+  def tell[T: Safe](msg: T, sender: AkkaActorRef): Unit = {
+    ref.tell(new SafeWrapper(msg), sender)
   }
 
-  def sendAndThen[T](msg: Box[T])(cont: () => Unit)(implicit acc: CanAccess { type C = msg.C }): Nothing = {
+  def forward[T: Safe](msg: T)(implicit context: AkkaActorContext): Unit = {
+    ref.forward(new SafeWrapper(msg))(context)
+  }
+
+  def sendAndThen[T](msg: Box[T])(cont: () => Unit)(implicit acc: msg.Access): Nothing = {
     // have to create a `Packed[T]`
     ref ! msg.pack()  // `pack()` accessible within package `lacasa`
     cont()
@@ -204,7 +208,7 @@ class ActorRef(private[akka] val ref: AkkaActorRef) {
    * and hard to use in an effective manner.
    */
   def ask[T](msg: Box[T])(cont: Future[Packed[Any]] => Unit)
-            (implicit timeout: Timeout, acc: CanAccess { type C = msg.C }): Nothing = {
+            (implicit timeout: Timeout, acc: msg.Access): Nothing = {
     val future = akka.pattern.ask(ref, msg.pack())
     cont(future.mapTo[Packed[Any]])
     throw new NoReturnControl
