@@ -106,7 +106,7 @@ object Safe {
   implicit val noneIsSafe: Safe[None.type] = new Safe[None.type] {}
 }
 
-sealed class Box[+T] private (private val instance: T) {
+sealed class Box[+T] private (private[lacasa] val instance: T) {
   self =>
 
   type C

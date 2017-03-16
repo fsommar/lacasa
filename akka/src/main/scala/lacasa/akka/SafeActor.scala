@@ -14,7 +14,7 @@ import akka.util.Timeout
 import lacasa.{Box, CanAccess, Safe, Packed, NoReturnControl}
 
 
-private case class SafeWrapper[T](value: T) {
+private[akka] case class SafeWrapper[T](value: T) {
   implicit val safeEv: Safe[T] = implicitly
 }
 
@@ -156,7 +156,7 @@ trait OnlyBoxReceive { self: Actor =>
 
 }
 
-class ActorRef(private[actor] val ref: AkkaActorRef) {
+class ActorRef(private[akka] val ref: AkkaActorRef) {
 
   def !! [T](msg: Box[T])(implicit acc: CanAccess { type C = msg.C }): Nothing = {
     // have to create a `Packed[T]`
