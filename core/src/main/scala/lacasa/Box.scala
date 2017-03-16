@@ -4,7 +4,7 @@
 package lacasa
 
 import scala.reflect.{ClassTag, classTag}
-
+import scala.collection.immutable
 import scala.util.control.ControlThrowable
 
 private class NoReturnControl extends ControlThrowable {
@@ -84,11 +84,23 @@ object Box {
 /*sealed*/ trait Safe[T] extends Serializable
 
 object Safe {
-  implicit val nothingIsSafe: Safe[Nothing] = new Safe[Nothing] {}
-  implicit val intIsSafe: Safe[Int] = new Safe[Int] {}
-  implicit val stringIsSafe: Safe[String] = new Safe[String] {}
   implicit def actorRefIsSafe[T]: Safe[ActorRef[T]] = new Safe[ActorRef[T]] {}
+
+  implicit val nothingIsSafe: Safe[Nothing] = new Safe[Nothing] {}
+
+  implicit val intIsSafe: Safe[Int] = new Safe[Int] {}
+  implicit val byteIsSafe: Safe[Byte] = new Safe[Byte] {}
+  implicit val longIsSafe: Safe[Long] = new Safe[Long] {}
+  implicit val doubleIsSafe: Safe[Double] = new Safe[Double] {}
+  implicit val stringIsSafe: Safe[String] = new Safe[String] {}
+
   implicit def tuple2IsSafe[T, S](implicit one: Safe[T], two: Safe[S]): Safe[(T, S)] = new Safe[(T, S)] {}
+  implicit def tuple3IsSafe[T: Safe, S: Safe, R: Safe]: Safe[(T, S, R)] = new Safe[(T, S, R)] {}
+  implicit def tuple4IsSafe[T: Safe, S: Safe, R: Safe, Q: Safe]: Safe[(T, S, R, Q)] = new Safe[(T, S, R, Q)] {}
+
+  implicit def listIsSafe[T: Safe]: Safe[List[T]] = new Safe[List[T]] {}
+  implicit def vectorIsSafe[T: Safe]: Safe[immutable.Vector[T]] = new Safe[immutable.Vector[T]] {}
+
   implicit def optionIsSafe[T: Safe]: Safe[Option[T]] = new Safe[Option[T]] {}
   // This should enable the user to send a single None value without having to cast it to an Option[T: Safe].
   implicit val noneIsSafe: Safe[None.type] = new Safe[None.type] {}
