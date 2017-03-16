@@ -81,7 +81,7 @@ object Box {
 
 }
 
-/*sealed*/ trait Safe[T]
+/*sealed*/ trait Safe[T] extends Serializable
 
 object Safe {
   implicit val nothingIsSafe: Safe[Nothing] = new Safe[Nothing] {}
