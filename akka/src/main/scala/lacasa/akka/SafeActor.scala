@@ -7,17 +7,23 @@ import scala.language.implicitConversions
 import scala.reflect.runtime.universe._
 
 import akka.actor.{Actor => AkkaActor, ActorContext => AkkaActorContext, ActorRef => AkkaActorRef,
-                   ActorPath, RootActorPath, Address, Props, Terminated}
+                   ActorPath, RootActorPath, Address, Terminated}
 import akka.event.LoggingAdapter
 import akka.util.Timeout
 
 import lacasa.{Box, Packed, Safe}
 
 object ActorRef {
+
   implicit final class ActorRefOps(val ref: ActorRef) extends AnyVal {
     def ![T: Safe](msg: T): Unit = ref.tell(msg)
     // def !(msg: Box[Any])(implicit access: msg.Access): Nothing = ref.tell(msg)(access)
   }
+
+  implicit val actorRefLogSource: akka.event.LogSource[ActorRef] = new akka.event.LogSource[ActorRef] {
+    def genString(a: ActorRef) = a.path.toString
+  }
+
 }
 
 trait ActorRef extends java.lang.Comparable[ActorRef] {
@@ -214,8 +220,50 @@ private object ActorSystemAdapter {
   }
 }
 
+object Actor {
+  
+  implicit val actorLogSource: akka.event.LogSource[Actor] = new akka.event.LogSource[Actor] {
+    def genString(a: Actor) = a.self.path.toString
+  }
+
+}
+
 trait Actor {
-  def receive(msg: Box[Any])(implicit access: msg.Access): Nothing
+  def receive[T: Safe](msg: T): Unit
+
+  // def receiveSystem(msg: SystemMessage): Unit
+
+  implicit val context: ActorContext = {
+    val contextStack = akka.actor.ActorCell.contextStack.get
+    if ((contextStack.isEmpty) || (contextStack.head eq null))
+      throw akka.actor.ActorInitializationException(
+        s"You cannot create an instance of [${getClass.getName}] explicitly using the constructor (new). " +
+          "You have to use one of the 'actorOf' factory methods to create a new actor. See the documentation.")
+    val c = contextStack.head
+    akka.actor.ActorCell.contextStack.set(null :: contextStack)
+    new ActorContextAdapter(c)
+  }
+
+  /**
+   * The 'self' field holds the ActorRef for this actor.
+   * <p/>
+   * Can be used to send messages to itself:
+   * <pre>
+   * self ! message
+   * </pre>
+   */
+  implicit final val self: ActorRef = context.self //MUST BE A VAL, TRUST ME
+
+  /**
+   * The reference sender Actor of the last received message.
+   * Is defined if the message was sent from another Actor,
+   * else `deadLetters` in [[akka.actor.ActorSystem]].
+   *
+   * WARNING: Only valid within the Actor itself, so do not close over it and
+   * publish it to other threads!
+   */
+   // TODO: SafeActorRef
+  final def sender(): ActorRef = context.sender()
 }
 
 private case class SafeWrapper[T](value: T) {
@@ -233,11 +281,11 @@ private class ActorAdapter(private val _actor: Actor) extends AkkaActor {
 
   def running: Receive = {
     case packed: Packed[_] =>
-      _actor.receive(packed.box)(packed.access)
+      ???
 
     case x: SafeWrapper[_] =>
       implicit val ev = x.safeEv
-      ???
+      _actor.receive(x.value)
 
     case x =>
       ???
@@ -262,6 +310,7 @@ private final class ActorContextAdapter(val untyped: akka.actor.ActorContext) ex
 
   override def self = ActorRefAdapter(untyped.self)
   override val system = ActorSystemAdapter(untyped.system)
+  override def sender() = ActorRefAdapter(untyped.sender())
   override def children = untyped.children.map(ActorRefAdapter(_))
   override def child(name: String) = untyped.child(name).map(ActorRefAdapter(_))
   override def spawn(name: String, props: Props = Props.empty) =
@@ -308,6 +357,9 @@ trait ActorContext {
    * actor message processing thread, such as [[scala.concurrent.Future]] callbacks.
    */
   def system: ActorSystem
+
+  // TODO: SafeActorRef
+  def sender(): ActorRef
 
   /**
    * The list of child Actors created by this Actor during its lifetime that
@@ -386,10 +438,21 @@ sealed trait Props {
 private case class PropsImpl(unsafe: akka.actor.Props) extends Props
 
 private object PropsAdapter {
-  def apply[T](props: Props = Props.empty): akka.actor.Props = {
-    akka.actor.Props(new ActorAdapter(behavior()))
-  }
+  def apply[T](props: Props = Props.empty): akka.actor.Props = props.unsafe
 }
+
+trait ActorLogging { this: Actor ⇒
+  private var _log: LoggingAdapter = _
+
+  def log: LoggingAdapter = {
+    // only used in Actor, i.e. thread safe
+    if (_log eq null)
+      _log = akka.event.Logging(context.system.asInstanceOf[ActorSystemAdapter].untyped, this)
+    _log
+  }
+
+}
+
 
 /*
 TODO: Split tell[T: Safe](T) and tell(Box[Any]) into two traits, for both Actor and ActorRef.
@@ -399,5 +462,17 @@ track of it during runtime (by throwing exceptions).
 
 If done correctly, it should allow for a very simple migration path from an existing Akka
 application, given that 1) it uses the allowed subset of functionality and 2) it only sends
-Safe types.
-*/ 
+Safe types. However, if the user has objects that need to be send in boxes, then they can do
+too, knowing that it will require more effort to migrate.
+
+TODO: Change ActorContext to work like regular Akka, and make it available in the body of
+an Actor.
+
+TODO: Make ActorAdapter work for the aforementioned two traits for Safe and Box actors,
+and make sure the Banking example can be implemented using it.
+
+TODO: Support Ask pattern, but only for Safe ActorRefs, i.e. enforce `sender` to only allow
+sending safe messages, and likewise for the ask method. This should be handled on trait level.
+
+TODO: Move Terminated et. al. to LaCasa actor namespace.
+*/

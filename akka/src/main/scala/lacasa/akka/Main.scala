@@ -1,9 +1,12 @@
-import akka.actor.lacasa.{Actor, ActorSystem, ActorRef, Props}
+import akka.actor.lacasa.{Actor, ActorLogging, ActorSystem, ActorRef, Props}
 import lacasa.Safe
 
 import scala.concurrent.{Await, ExecutionContext, Future}
 import scala.concurrent.duration._
 import scala.util.Random
+
+import akka.event.Logging
+import akka.util.Timeout
 
 object TestAkka {
   def main(args: Array[String]) {
@@ -29,17 +32,17 @@ object TestAkka {
   sealed trait Message
   case class ReplyMsg() extends Message
   case class StopMsg() extends Message
-  case class DebitMsg(sender: ActorRef, amount: Double) extends Message
-  case class CreditMsg(sender: ActorRef, amount: Double, recipient: ActorRef) extends Message
+  case class DebitMsg(amount: Double) extends Message
+  case class CreditMsg(amount: Double, recipient: ActorRef) extends Message
 
-  protected class Teller(numAccounts: Int, numBankings: Int) extends Actor {
-    val log = Logging(context.system, this)
+  protected class Teller(numAccounts: Int, numBankings: Int) extends Actor with ActorLogging {
 
     private val accounts = Array.tabulate[ActorRef](numAccounts)((i) => {
         context.system.actorOf(Props(
         new Account(
           i,
-          /*BankingConfig.INITIAL_BALANCE*/ Double.MaxValue / (1000 * 50000))))
+          /*BankingConfig.INITIAL_BALANCE*/ Double.MaxValue / (1000 * 50000))),
+        s"account_$i")
     })
     private var numCompletedBankings = 0
     private val randomGen = new Random(123456)
@@ -50,7 +53,7 @@ object TestAkka {
       generateWork()
     }
 
-    override def receive: Receive = {
+    override def receive[T: Safe](msg: T) = msg match {
       case sm: ReplyMsg =>
         numCompletedBankings += 1
         if (numCompletedBankings == numBankings) {
@@ -60,8 +63,6 @@ object TestAkka {
           log.info("stopping")
           context.stop(self)
         }
-
-      case _ => ???
     }
 
     def generateWork(): Unit = {
@@ -77,28 +78,26 @@ object TestAkka {
       val destAccount = accounts(destAccountId)
       val amount = Math.abs(randomGen.nextDouble()) * 1000
 
-      srcAccount ! new CreditMsg(self, amount, destAccount)
+      srcAccount ! new CreditMsg(amount, destAccount)
     }
   }
 
   protected class Account(id: Int, var balance: Double) extends Actor {
 
-    override def receive: Receive = {
+    override def receive[T: Safe](msg: T) = msg match {
       case dm: DebitMsg =>
         balance += dm.amount
         context.sender ! new ReplyMsg()
 
       case cm: CreditMsg =>
         balance -= cm.amount
-        implicit val timeout = Timeout(6 seconds)
-        val future = cm.recipient ? new DebitMsg(self, cm.amount)
+        implicit val timeout = Timeout(6.seconds)
+        val future = cm.recipient ? new DebitMsg(cm.amount)
         Await.result(future, Duration.Inf)
         context.sender ! new ReplyMsg()
 
       case _: StopMsg =>
         context.stop(self)
-
-      case _ => ???
     }
   }
 }
