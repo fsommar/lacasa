@@ -24,6 +24,8 @@ object ActorRef {
     def genString(a: ActorRef) = a.path.toString
   }
 
+  val noSender = ActorRefAdapter(akka.actor.ActorRef.noSender)
+
 }
 
 trait ActorRef extends java.lang.Comparable[ActorRef] {
@@ -453,6 +455,26 @@ trait ActorLogging { this: Actor ⇒
 
 }
 
+object AskableActorRef {
+  implicit def ask(actorRef: ActorRef): AskableActorRef =
+    new AskableActorRef(actorRef.asInstanceOf[ActorRefAdapter].unsafe)
+}
+
+final class AskableActorRef(val actorRef: AkkaActorRef) extends AnyVal {
+  
+  def ask[Req: Safe, Res: Safe](msg: Req, sender: ActorRef = ActorRef.noSender)
+                               (implicit timeout: Timeout, ec: ExecutionContext): Future[Res] = {
+    akka.pattern.ask(actorRef, msg, sender.asInstanceOf[ActorRefAdapter].unsafe)(timeout)
+      .map { case x: Res @unchecked => x }
+  }
+
+  def ?[Req, Res](msg: Req)
+                 (implicit timeout: Timeout, ec: ExecutionContext,
+                  req: Safe[Req], res: Safe[Res]): Future[Res] =
+      ask(msg, ActorRef.noSender)(req, res, timeout, ec)
+
+}
+
 
 /*
 TODO: Split tell[T: Safe](T) and tell(Box[Any]) into two traits, for both Actor and ActorRef.
@@ -464,9 +486,6 @@ If done correctly, it should allow for a very simple migration path from an exis
 application, given that 1) it uses the allowed subset of functionality and 2) it only sends
 Safe types. However, if the user has objects that need to be send in boxes, then they can do
 too, knowing that it will require more effort to migrate.
-
-TODO: Change ActorContext to work like regular Akka, and make it available in the body of
-an Actor.
 
 TODO: Make ActorAdapter work for the aforementioned two traits for Safe and Box actors,
 and make sure the Banking example can be implemented using it.

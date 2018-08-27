@@ -1,11 +1,10 @@
-import akka.actor.lacasa.{Actor, ActorLogging, ActorSystem, ActorRef, Props}
+import akka.actor.lacasa.{Actor, ActorLogging, ActorSystem, AskableActorRef, ActorRef, Props}
 import lacasa.Safe
 
 import scala.concurrent.{Await, ExecutionContext, Future}
 import scala.concurrent.duration._
 import scala.util.Random
 
-import akka.event.Logging
 import akka.util.Timeout
 
 object TestAkka {
@@ -83,6 +82,7 @@ object TestAkka {
   }
 
   protected class Account(id: Int, var balance: Double) extends Actor {
+    implicit val ec = context.executionContext
 
     override def receive[T: Safe](msg: T) = msg match {
       case dm: DebitMsg =>
@@ -92,7 +92,7 @@ object TestAkka {
       case cm: CreditMsg =>
         balance -= cm.amount
         implicit val timeout = Timeout(6.seconds)
-        val future = cm.recipient ? new DebitMsg(cm.amount)
+        val future = (cm.recipient: AskableActorRef) ? new DebitMsg(cm.amount)
         Await.result(future, Duration.Inf)
         context.sender ! new ReplyMsg()
 
