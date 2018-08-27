@@ -7,7 +7,7 @@ import scala.language.implicitConversions
 import scala.reflect.runtime.universe._
 
 import akka.actor.{Actor => AkkaActor, ActorContext => AkkaActorContext, ActorRef => AkkaActorRef,
-                   ActorPath, RootActorPath, Address}
+                   ActorPath, RootActorPath, Address, Props, Terminated}
 import akka.event.LoggingAdapter
 import akka.util.Timeout
 
@@ -105,6 +105,8 @@ abstract class ActorSystem extends ActorRef {
    * the same JVM & class loader.
    */
   def name: String
+  def actorOf(props: Props, name: String): ActorRef
+  def terminate(): scala.concurrent.Future[Terminated]
 }
 
 object ActorSystem {
@@ -112,7 +114,7 @@ object ActorSystem {
   /**
    * Scala API: Create an ActorSystem
    */
-  def apply(name: String): ActorSystem = createInternal(name, akka.actor.Props.empty)
+  def apply(name: String): ActorSystem = createInternal(name, Props.empty)
 
   /**
    * Create an ActorSystem based on the untyped [[akka.actor.ActorSystem]]
@@ -120,11 +122,11 @@ object ActorSystem {
    * system typed and untyped actors can coexist.
    */
   private def createInternal[T](name: String,
-                                props: akka.actor.Props): ActorSystem = {
+                                props: Props): ActorSystem = {
     val cl = akka.actor.ActorSystem.findClassLoader()
     val appConfig = com.typesafe.config.ConfigFactory.load(cl)
 
-    val untyped = new akka.actor.ActorSystemImpl(name, appConfig, cl, None, Some(props))
+    val untyped = new akka.actor.ActorSystemImpl(name, appConfig, cl, None, Some(PropsAdapter(props)))
     untyped.start()
 
     ActorSystemAdapter.AdapterExtension(untyped).adapter
@@ -176,18 +178,22 @@ private class ActorSystemAdapter(val untyped: akka.actor.ActorSystemImpl)
   // override def uptime: Long = untyped.uptime
   // override def printTree: String = untyped.printTree
 
-  // import akka.dispatch.ExecutionContexts.sameThreadExecutionContext
+  import akka.dispatch.ExecutionContexts.sameThreadExecutionContext
 
-  // override def terminate(): scala.concurrent.Future[akka.actor.typed.Terminated] =
-  //   untyped.terminate().map(t ⇒ Terminated(ActorRefAdapter(t.actor))(null))(sameThreadExecutionContext)
+  override def terminate(): scala.concurrent.Future[Terminated] =
+    untyped.terminate()//.map(t ⇒ Terminated(ActorRefAdapter(t.actor))(null))(sameThreadExecutionContext)
   // override lazy val whenTerminated: scala.concurrent.Future[akka.actor.typed.Terminated] =
   //   untyped.whenTerminated.map(t ⇒ Terminated(ActorRefAdapter(t.actor))(null))(sameThreadExecutionContext)
   // override lazy val getWhenTerminated: CompletionStage[akka.actor.typed.Terminated] =
   //   FutureConverters.toJava(whenTerminated)
 
-  def systemActorOf(name: String, props: akka.actor.Props)(implicit timeout: Timeout): Future[ActorRef] = {
-    val ref = untyped.systemActorOf(props, name)
+  def systemActorOf(name: String, props: Props)(implicit timeout: Timeout): Future[ActorRef] = {
+    val ref = untyped.systemActorOf(PropsAdapter(props), name)
     Future.successful(ActorRefAdapter(ref))
+  }
+
+  override def actorOf(props: Props, name: String): ActorRef = {
+    ActorRefAdapter(untyped.actorOf(PropsAdapter(props), name))
   }
 
 }
@@ -216,7 +222,7 @@ private case class SafeWrapper[T](value: T) {
   implicit val safeEv: Safe[T] = implicitly
 }
 
-private class ActorAdapter(_actor: Actor) extends AkkaActor {
+private class ActorAdapter(private val _actor: Actor) extends AkkaActor {
 
   private var _ctx: ActorContextAdapter = _
   def ctx: ActorContextAdapter =
@@ -251,8 +257,7 @@ private class ActorAdapter(_actor: Actor) extends AkkaActor {
   }
 }
 
-private final class ActorContextAdapter(val untyped: akka.actor.ActorContext) extends ActorContextImpl {
-  import akka.actor.Props
+private final class ActorContextAdapter(val untyped: akka.actor.ActorContext) extends ActorContext {
   import ActorRefAdapter.toUntyped
 
   override def self = ActorRefAdapter(untyped.self)
@@ -281,13 +286,81 @@ private final class ActorContextAdapter(val untyped: akka.actor.ActorContext) ex
           s"but [$child] is not a child of [$self]. Stopping other actors has to be expressed as " +
           "an explicit stop message that the actor accepts.")
     }
+  override def executionContext: ExecutionContextExecutor = untyped.dispatcher
+}
+
+trait ActorContext {
+
+  /**
+   * The identity of this Actor, bound to the lifecycle of this Actor instance.
+   * An Actor with the same name that lives before or after this instance will
+   * have a different [[ActorRef]].
+   *
+   * This field is thread-safe and can be called from other threads than the ordinary
+   * actor message processing thread, such as [[scala.concurrent.Future]] callbacks.
+   */
+  def self: ActorRef
+
+  /**
+   * The [[ActorSystem]] to which this Actor belongs.
+   *
+   * This field is thread-safe and can be called from other threads than the ordinary
+   * actor message processing thread, such as [[scala.concurrent.Future]] callbacks.
+   */
+  def system: ActorSystem
+
+  /**
+   * The list of child Actors created by this Actor during its lifetime that
+   * are still alive, in no particular order.
+   *
+   * *Warning*: This method is not thread-safe and must not be accessed from threads other
+   * than the ordinary actor message processing thread, such as [[scala.concurrent.Future]] callbacks.
+   */
+  def children: Iterable[ActorRef]
+
+  /**
+   * The named child Actor if it is alive.
+   *
+   * *Warning*: This method is not thread-safe and must not be accessed from threads other
+   * than the ordinary actor message processing thread, such as [[scala.concurrent.Future]] callbacks.
+   */
+  def child(name: String): Option[ActorRef]
+
+  /**
+   * Create a child Actor from the given [[akka.actor.typed.Behavior]] and with the given name.
+   *
+   * *Warning*: This method is not thread-safe and must not be accessed from threads other
+   * than the ordinary actor message processing thread, such as [[scala.concurrent.Future]] callbacks.
+   */
+  def spawn(name: String, props: Props = Props.empty): ActorRef
+
+  /**
+   * Force the child Actor under the given name to terminate after it finishes
+   * processing its current message. Nothing happens if the ActorRef is a child that is already stopped.
+   *
+   * *Warning*: This method is not thread-safe and must not be accessed from threads other
+   * than the ordinary actor message processing thread, such as [[scala.concurrent.Future]] callbacks.
+   *
+   *  @throws IllegalArgumentException if the given actor ref is not a direct child of this actor
+   */
+  def stop(child: ActorRef): Unit
+
+  /**
+   * This Actor’s execution context. It can be used to run asynchronous tasks
+   * like [[scala.concurrent.Future]] operators.
+   *
+   * This field is thread-safe and can be called from other threads than the ordinary
+   * actor message processing thread, such as [[scala.concurrent.Future]] callbacks.
+   */
+  implicit def executionContext: ExecutionContextExecutor
+
 }
 
 private object ActorContextAdapter {
 
-  def spawn(ctx: akka.actor.ActorContext, name: String, props: akka.actor.Props): ActorRef = {
+  def spawn(ctx: akka.actor.ActorContext, name: String, props: Props): ActorRef = {
     try {
-      ActorRefAdapter(ctx.actorOf(props, name))
+      ActorRefAdapter(ctx.actorOf(props.unsafe, name))
     } catch {
       case _: Throwable ⇒
         throw new java.lang.IllegalArgumentException("Remote deployment not allowed for typed actors")
@@ -296,116 +369,35 @@ private object ActorContextAdapter {
 
 }
 
-private trait ActorContextImpl extends ActorContext with scaladsl.ActorContext {
+object Props {
+  val empty: Props = PropsImpl(akka.actor.Props.empty)
 
-  private var messageAdapterRef: OptionVal[ActorRef[Any]] = OptionVal.None
-  private var _messageAdapters: List[(Class[_], Any ⇒ T)] = Nil
-  private var _timer: OptionVal[TimerSchedulerImpl[T]] = OptionVal.None
+  def apply[T <: Actor: scala.reflect.ClassTag](): Props =
+    PropsImpl(akka.actor.Props[ActorAdapter])
 
-  // context-shared timer needed to allow for nested timer usage
-  def timer: TimerSchedulerImpl[T] = _timer match {
-    case OptionVal.Some(timer) ⇒ timer
-    case OptionVal.None ⇒
-      val timer = new TimerSchedulerImpl[T](this)
-      _timer = OptionVal.Some(timer)
-      timer
-  }
-
-  override def asJava: javadsl.ActorContext[T] = this
-
-  override def asScala: scaladsl.ActorContext[T] = this
-
-  override def getChild(name: String): Optional[ActorRef[Void]] =
-    child(name) match {
-      case Some(c) ⇒ Optional.of(c.upcast[Void])
-      case None    ⇒ Optional.empty()
-    }
-
-  override def getChildren: java.util.List[ActorRef[Void]] = {
-    val c = children
-    val a = new ArrayList[ActorRef[Void]](c.size)
-    val i = c.iterator
-    while (i.hasNext) a.add(i.next().upcast[Void])
-    a
-  }
-
-  override def getExecutionContext: ExecutionContextExecutor =
-    executionContext
-
-  override def getSelf: akka.actor.typed.ActorRef[T] =
-    self
-
-  override def getSystem: akka.actor.typed.ActorSystem[Void] =
-    system.asInstanceOf[ActorSystem[Void]]
-
-  override def getLog: Logger = log
-
-  override def setReceiveTimeout(d: java.time.Duration, msg: T): Unit =
-    setReceiveTimeout(d.asScala, msg)
-
-  override def schedule[U](delay: java.time.Duration, target: ActorRef[U], msg: U): akka.actor.Cancellable =
-    schedule(delay.asScala, target, msg)
-
-  override def spawn[U](behavior: akka.actor.typed.Behavior[U], name: String): akka.actor.typed.ActorRef[U] =
-    spawn(behavior, name, Props.empty)
-
-  override def spawnAnonymous[U](behavior: akka.actor.typed.Behavior[U]): akka.actor.typed.ActorRef[U] =
-    spawnAnonymous(behavior, Props.empty)
-
-  // Scala API impl
-  override def ask[Req, Res](otherActor: ActorRef[Req])(createRequest: ActorRef[Res] ⇒ Req)(mapResponse: Try[Res] ⇒ T)(implicit responseTimeout: Timeout, classTag: ClassTag[Res]): Unit = {
-    import akka.actor.typed.scaladsl.AskPattern._
-    (otherActor ? createRequest)(responseTimeout, system.scheduler).onComplete(res ⇒
-      self.asInstanceOf[ActorRef[AnyRef]] ! new AskResponse(res, mapResponse)
-    )
-  }
-
-  // Java API impl
-  def ask[Req, Res](resClass: Class[Res], otherActor: ActorRef[Req], responseTimeout: Timeout, createRequest: function.Function[ActorRef[Res], Req], applyToResponse: BiFunction[Res, Throwable, T]): Unit = {
-    this.ask(otherActor)(createRequest.apply) {
-      case Success(message) ⇒ applyToResponse.apply(message, null)
-      case Failure(ex)      ⇒ applyToResponse.apply(null.asInstanceOf[Res], ex)
-    }(responseTimeout, ClassTag[Res](resClass))
-  }
-
-  private[akka] override def spawnMessageAdapter[U](f: U ⇒ T, name: String): ActorRef[U] =
-    internalSpawnMessageAdapter(f, name)
-
-  private[akka] override def spawnMessageAdapter[U](f: U ⇒ T): ActorRef[U] =
-    internalSpawnMessageAdapter(f, name = "")
-
-  /**
-   * INTERNAL API: Needed to make Scala 2.12 compiler happy if spawnMessageAdapter is overloaded for scaladsl/javadsl.
-   * Otherwise "ambiguous reference to overloaded definition" because Function is lambda.
-   */
-  @InternalApi private[akka] def internalSpawnMessageAdapter[U](f: U ⇒ T, name: String): ActorRef[U]
-
-  override def messageAdapter[U: ClassTag](f: U ⇒ T): ActorRef[U] = {
-    val messageClass = implicitly[ClassTag[U]].runtimeClass.asInstanceOf[Class[U]]
-    internalMessageAdapter(messageClass, f)
-  }
-
-  override def messageAdapter[U](messageClass: Class[U], f: JFunction[U, T]): ActorRef[U] =
-    internalMessageAdapter(messageClass, f.apply)
-
-  private def internalMessageAdapter[U](messageClass: Class[U], f: U ⇒ T): ActorRef[U] = {
-    // replace existing adapter for same class, only one per class is supported to avoid unbounded growth
-    // in case "same" adapter is added repeatedly
-    _messageAdapters = (messageClass, f.asInstanceOf[Any ⇒ T]) ::
-      _messageAdapters.filterNot { case (cls, _) ⇒ cls == messageClass }
-    val ref = messageAdapterRef match {
-      case OptionVal.Some(ref) ⇒ ref.asInstanceOf[ActorRef[U]]
-      case OptionVal.None ⇒
-        // AdaptMessage is not really a T, but that is erased
-        val ref = internalSpawnMessageAdapter[Any](msg ⇒ AdaptWithRegisteredMessageAdapter(msg).asInstanceOf[T], "adapter")
-        messageAdapterRef = OptionVal.Some(ref)
-        ref
-    }
-    ref.asInstanceOf[ActorRef[U]]
-  }
-
-  /**
-   * INTERNAL API
-   */
-  @InternalApi private[akka] def messageAdapters: List[(Class[_], Any ⇒ T)] = _messageAdapters
+  def apply[T <: Actor: scala.reflect.ClassTag](creator: ⇒ T): Props =
+    PropsImpl(akka.actor.Props[ActorAdapter](new ActorAdapter(creator)))
 }
+
+sealed trait Props {
+  def unsafe: akka.actor.Props
+}
+
+private case class PropsImpl(unsafe: akka.actor.Props) extends Props
+
+private object PropsAdapter {
+  def apply[T](props: Props = Props.empty): akka.actor.Props = {
+    akka.actor.Props(new ActorAdapter(behavior()))
+  }
+}
+
+/*
+TODO: Split tell[T: Safe](T) and tell(Box[Any]) into two traits, for both Actor and ActorRef.
+That way, an ActorRef to an Actor that only supports receiving safe messages, will only allow
+sending those things. That way, we'll get feedback during compile time, instead of keeping
+track of it during runtime (by throwing exceptions).
+
+If done correctly, it should allow for a very simple migration path from an existing Akka
+application, given that 1) it uses the allowed subset of functionality and 2) it only sends
+Safe types.
+*/ 
