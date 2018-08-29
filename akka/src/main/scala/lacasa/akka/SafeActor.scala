@@ -191,7 +191,6 @@ object Actor {
 }
 
 trait Actor {
-  private var _context: ActorContext = _
 
   def receive[T: Safe](msg: T): Unit
 
@@ -202,8 +201,8 @@ trait Actor {
   implicit val context: ActorContext =
     akka.actor.ActorCell.contextStack.get match {
       case null :: ctx :: _ => new ActorContextAdapter(ctx)
-      case _ => throw ActorInitializationException(
-        s"You cannot create an instance of [${getClass.getName}] explicitly using the constructor (new). " +
+      case lst => throw ActorInitializationException(
+        s"$lst\nYou cannot create an instance of [${getClass.getName}] explicitly using the constructor (new). " +
           "You have to use one of the 'actorOf' factory methods to create a new actor. See the documentation.")
     }
  
@@ -218,7 +217,7 @@ private case class SafeWrapper[T](value: T) {
 }
 
 private class ActorAdapter(_actor: => Actor) extends AkkaActor {
-  _actor
+  val ref = _actor
 
   def receive = running
 
@@ -228,7 +227,7 @@ private class ActorAdapter(_actor: => Actor) extends AkkaActor {
 
     case x: SafeWrapper[_] =>
       implicit val ev = x.safeEv
-      _actor.receive(x.value)
+      ref.receive(x.value)
 
     case x =>
       ???
