@@ -1,3 +1,5 @@
+// import akka.pattern.ask
+
 import akka.actor.lacasa.{Actor, ActorLogging, ActorSystem, AskableActorRef, ActorRef, Props}
 import lacasa.Safe
 
@@ -31,8 +33,8 @@ object TestAkka {
   sealed trait Message
   case class ReplyMsg() extends Message
   case class StopMsg() extends Message
-  case class DebitMsg(amount: Double) extends Message
-  case class CreditMsg(amount: Double, recipient: ActorRef) extends Message
+  case class DebitMsg(sender: ActorRef, amount: Double) extends Message
+  case class CreditMsg(sender: ActorRef, amount: Double, recipient: ActorRef) extends Message
 
   protected class Teller(numAccounts: Int, numBankings: Int) extends Actor with ActorLogging {
 
@@ -53,6 +55,7 @@ object TestAkka {
     }
 
     override def receive[T: Safe](msg: T) = msg match {
+    // override def receive: Receive = {
       case sm: ReplyMsg =>
         numCompletedBankings += 1
         if (numCompletedBankings == numBankings) {
@@ -77,24 +80,27 @@ object TestAkka {
       val destAccount = accounts(destAccountId)
       val amount = Math.abs(randomGen.nextDouble()) * 1000
 
-      srcAccount ! new CreditMsg(amount, destAccount)
+      srcAccount ! new CreditMsg(self, amount, destAccount)
     }
   }
 
-  protected class Account(id: Int, var balance: Double) extends Actor {
+  protected class Account(id: Int, var balance: Double) extends Actor with ActorLogging {
     implicit val ec = context.executionContext
 
     override def receive[T: Safe](msg: T) = msg match {
+    // override def receive: Receive = {
       case dm: DebitMsg =>
+        log.info("Received debit message with $" + dm.amount + ", balance is now $" + balance)
         balance += dm.amount
-        context.sender ! new ReplyMsg()
+        dm.sender ! new ReplyMsg()
 
       case cm: CreditMsg =>
         balance -= cm.amount
         implicit val timeout = Timeout(6.seconds)
-        val future = (cm.recipient: AskableActorRef) ? new DebitMsg(cm.amount)
+        val future = (cm.recipient: AskableActorRef) ? new DebitMsg(self, cm.amount)
+        // val future = cm.recipient ? new DebitMsg(self, cm.amount)
         Await.result(future, Duration.Inf)
-        context.sender ! new ReplyMsg()
+        cm.sender ! new ReplyMsg()
 
       case _: StopMsg =>
         context.stop(self)

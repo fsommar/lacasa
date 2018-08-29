@@ -7,7 +7,7 @@ import scala.language.implicitConversions
 import scala.reflect.runtime.universe._
 
 import akka.actor.{Actor => AkkaActor, ActorContext => AkkaActorContext, ActorRef => AkkaActorRef,
-                   ActorPath, RootActorPath, Address, Terminated}
+                   ActorPath, RootActorPath, Address, Terminated, ActorInitializationException}
 import akka.event.LoggingAdapter
 import akka.util.Timeout
 
@@ -37,10 +37,6 @@ trait ActorRef extends java.lang.Comparable[ActorRef] {
   def path: ActorPath
 }
 
-/**
- * Every ActorRef is also an ActorRefImpl, but these two methods shall be
- * completely hidden from client code.
- */
 private trait ActorRefImpl extends ActorRef {
   // def sendSystem(signal: SystemMessage): Unit
   // def isLocal: Boolean
@@ -73,7 +69,7 @@ private class ActorRefAdapter(val unsafe: AkkaActorRef)
   override def path: ActorPath = unsafe.path
 
   override def tell[T: Safe](msg: T): Unit = {
-    unsafe ! msg
+    unsafe ! new SafeWrapper(msg)
   }
 
   // TODO: Work around package private methods in lacasa/akka internals,
@@ -92,21 +88,11 @@ object ActorRefAdapter {
       case adapter: ActorRefAdapter   ⇒ adapter.unsafe
       case system: ActorSystemAdapter ⇒ system.untyped.guardian
       case _ ⇒
-        throw new UnsupportedOperationException("only adapted untyped ActorRefs permissible " +
+        throw new UnsupportedOperationException("only adapted unsafe ActorRefs permissible " +
           s"($ref of class ${ref.getClass.getName})")
     }
 }
 
-
-/**
- * An ActorSystem is home to a hierarchy of Actors. It is created using
- * [[ActorSystem#apply]] from a [[Behavior]] object that describes the root
- * Actor of this hierarchy and which will create all other Actors beneath it.
- * A system also implements the [[ActorRef]] type, and sending a message to
- * the system directs that message to the root Actor.
- *
- * Not for user extension.
- */
 abstract class ActorSystem extends ActorRef {
   /**
    * The name of this actor system, used to distinguish multiple ones within
@@ -119,33 +105,10 @@ abstract class ActorSystem extends ActorRef {
 
 object ActorSystem {
 
-  /**
-   * Scala API: Create an ActorSystem
-   */
-  def apply(name: String): ActorSystem = createInternal(name, Props.empty)
+  def apply(name: String): ActorSystem = wrap(akka.actor.ActorSystem(name))
 
-  /**
-   * Create an ActorSystem based on the untyped [[akka.actor.ActorSystem]]
-   * which runs Akka Typed [[Behavior]] on an emulation layer. In this
-   * system typed and untyped actors can coexist.
-   */
-  private def createInternal[T](name: String,
-                                props: Props): ActorSystem = {
-    val cl = akka.actor.ActorSystem.findClassLoader()
-    val appConfig = com.typesafe.config.ConfigFactory.load(cl)
-
-    val untyped = new akka.actor.ActorSystemImpl(name, appConfig, cl, None, Some(PropsAdapter(props)))
-    untyped.start()
-
-    ActorSystemAdapter.AdapterExtension(untyped).adapter
-  }
-
-  /**
-   * Wrap an untyped [[akka.actor.ActorSystem]] such that it can be used from
-   * Akka Typed [[Behavior]].
-   */
   def wrap(untyped: akka.actor.ActorSystem): ActorSystem =
-    ActorSystemAdapter.AdapterExtension(untyped.asInstanceOf[akka.actor.ActorSystemImpl]).adapter
+    ActorSystemAdapter(untyped.asInstanceOf[akka.actor.ActorSystemImpl])
 }
 
 private class ActorSystemAdapter(val untyped: akka.actor.ActorSystemImpl)
@@ -200,9 +163,8 @@ private class ActorSystemAdapter(val untyped: akka.actor.ActorSystemImpl)
     Future.successful(ActorRefAdapter(ref))
   }
 
-  override def actorOf(props: Props, name: String): ActorRef = {
+  override def actorOf(props: Props, name: String): ActorRef =
     ActorRefAdapter(untyped.actorOf(PropsAdapter(props), name))
-  }
 
 }
 
@@ -223,47 +185,30 @@ private object ActorSystemAdapter {
 }
 
 object Actor {
-  
   implicit val actorLogSource: akka.event.LogSource[Actor] = new akka.event.LogSource[Actor] {
     def genString(a: Actor) = a.self.path.toString
   }
-
 }
 
 trait Actor {
+  private var _context: ActorContext = _
+
   def receive[T: Safe](msg: T): Unit
 
   // def receiveSystem(msg: SystemMessage): Unit
 
-  implicit val context: ActorContext = {
-    val contextStack = akka.actor.ActorCell.contextStack.get
-    if ((contextStack.isEmpty) || (contextStack.head eq null))
-      throw akka.actor.ActorInitializationException(
+  // Since the ActorAdapter already has initialized and set the head of the contextStack to null,
+  // that's what's being matched for, and any other structure of the contextStack is an exception.
+  implicit val context: ActorContext =
+    akka.actor.ActorCell.contextStack.get match {
+      case null :: ctx :: _ => new ActorContextAdapter(ctx)
+      case _ => throw ActorInitializationException(
         s"You cannot create an instance of [${getClass.getName}] explicitly using the constructor (new). " +
           "You have to use one of the 'actorOf' factory methods to create a new actor. See the documentation.")
-    val c = contextStack.head
-    akka.actor.ActorCell.contextStack.set(null :: contextStack)
-    new ActorContextAdapter(c)
-  }
+    }
+ 
+  implicit final val self: ActorRef = context.self
 
-  /**
-   * The 'self' field holds the ActorRef for this actor.
-   * <p/>
-   * Can be used to send messages to itself:
-   * <pre>
-   * self ! message
-   * </pre>
-   */
-  implicit final val self: ActorRef = context.self //MUST BE A VAL, TRUST ME
-
-  /**
-   * The reference sender Actor of the last received message.
-   * Is defined if the message was sent from another Actor,
-   * else `deadLetters` in [[akka.actor.ActorSystem]].
-   *
-   * WARNING: Only valid within the Actor itself, so do not close over it and
-   * publish it to other threads!
-   */
    // TODO: SafeActorRef
   final def sender(): ActorRef = context.sender()
 }
@@ -272,12 +217,8 @@ private case class SafeWrapper[T](value: T) {
   implicit val safeEv: Safe[T] = implicitly
 }
 
-private class ActorAdapter(private val _actor: Actor) extends AkkaActor {
-
-  private var _ctx: ActorContextAdapter = _
-  def ctx: ActorContextAdapter =
-    if (_ctx ne null) _ctx
-    else throw new IllegalStateException("Context was accessed before safe actor was started.")
+private class ActorAdapter(_actor: => Actor) extends AkkaActor {
+  _actor
 
   def receive = running
 
@@ -295,15 +236,6 @@ private class ActorAdapter(private val _actor: Actor) extends AkkaActor {
 
   protected def start(): Unit = {
     context.become(running)
-    initializeContext()
-  }
-
-  override def postRestart(reason: Throwable): Unit = {
-    initializeContext()
-  }
-
-  protected def initializeContext(): Unit = {
-    _ctx = new ActorContextAdapter(context)
   }
 }
 
@@ -426,11 +358,12 @@ private object ActorContextAdapter {
 object Props {
   val empty: Props = PropsImpl(akka.actor.Props.empty)
 
-  def apply[T <: Actor: scala.reflect.ClassTag](): Props =
-    PropsImpl(akka.actor.Props[ActorAdapter])
+  // TODO: Create `T` via reflection
+  // def apply[T <: Actor: ClassTag](): Props =
+  //   PropsImpl(akka.actor.Props[ActorAdapter])
 
-  def apply[T <: Actor: scala.reflect.ClassTag](creator: ⇒ T): Props =
-    PropsImpl(akka.actor.Props[ActorAdapter](new ActorAdapter(creator)))
+  def apply[T <: Actor](creator: ⇒ T): Props =
+    PropsImpl(akka.actor.Props(new ActorAdapter(creator)))
 }
 
 sealed trait Props {
@@ -440,7 +373,7 @@ sealed trait Props {
 private case class PropsImpl(unsafe: akka.actor.Props) extends Props
 
 private object PropsAdapter {
-  def apply[T](props: Props = Props.empty): akka.actor.Props = props.unsafe
+  def apply(props: Props = Props.empty): akka.actor.Props = props.unsafe
 }
 
 trait ActorLogging { this: Actor ⇒
@@ -464,8 +397,13 @@ final class AskableActorRef(val actorRef: AkkaActorRef) extends AnyVal {
   
   def ask[Req: Safe, Res: Safe](msg: Req, sender: ActorRef = ActorRef.noSender)
                                (implicit timeout: Timeout, ec: ExecutionContext): Future[Res] = {
-    akka.pattern.ask(actorRef, msg, sender.asInstanceOf[ActorRefAdapter].unsafe)(timeout)
-      .map { case x: Res @unchecked => x }
+    akka.pattern.ask(actorRef, new SafeWrapper(msg), sender.asInstanceOf[ActorRefAdapter].unsafe)(timeout)
+      .map {
+        case x: Res @unchecked => x
+        case _: SafeWrapper[Res @unchecked] =>
+          println("Got SafeWrapper result")
+          ???
+      }
   }
 
   def ?[Req, Res](msg: Req)
