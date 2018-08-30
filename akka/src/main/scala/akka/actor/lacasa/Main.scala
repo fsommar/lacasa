@@ -1,6 +1,8 @@
-// import akka.pattern.ask
+import scala.language.implicitConversions
 
-import akka.actor.lacasa.{Actor, ActorLogging, ActorSystem, AskableActorRef, ActorRef, Props}
+import akka.pattern.lacasa.ask
+
+import akka.actor.lacasa.{Actor, ActorLogging, ActorSystem, ActorRef, Props}
 import lacasa.Safe
 
 import scala.concurrent.{Await, ExecutionContext, Future}
@@ -97,8 +99,7 @@ object TestAkka {
       case cm: CreditMsg =>
         balance -= cm.amount
         implicit val timeout = Timeout(6.seconds)
-        val future = (cm.recipient: AskableActorRef) ? new DebitMsg(self, cm.amount)
-        // val future = cm.recipient ? new DebitMsg(self, cm.amount)
+        val future = cm.recipient ? new DebitMsg(self, cm.amount)
         Await.result(future, Duration.Inf)
         cm.sender ! new ReplyMsg()
 
