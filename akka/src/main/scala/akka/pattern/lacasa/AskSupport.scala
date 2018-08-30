@@ -18,10 +18,10 @@ final class AskableActorRef(val actorRef: akka.actor.ActorRef) extends AnyVal {
                                (implicit timeout: Timeout, ec: ExecutionContext): Future[Res] = {
     akka.pattern.ask(actorRef, new SafeWrapper(msg), sender.asInstanceOf[ActorRefAdapter].unsafe)(timeout)
       .map {
-        case x: Res @unchecked => x
         case _: SafeWrapper[Res @unchecked] =>
           println("Got SafeWrapper result")
           ???
+        case x: Res @unchecked => x
       }
   }
 

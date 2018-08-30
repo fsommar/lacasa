@@ -29,9 +29,14 @@ private class ActorSystemAdapter(val untyped: akka.actor.ActorSystemImpl)
   extends ActorSystem with ActorRef with ActorRefImpl {
   // untyped.assertInitialized()
 
-  // Members declared in akka.actor.typed.ActorRef
+  // Members declared in akka.lacasa.actor.ActorRef
   override def tell[T: Safe](msg: T): Unit = {
     untyped.guardian ! msg
+  }
+
+  override def tell(msg: lacasa.Box[Any])(implicit acc: msg.Access): Nothing = {
+    untyped.guardian ! lacasa.PackABoxHelper.pack(msg)
+    throw new lacasa.PackABoxHelper.NoReturnControl
   }
 
   // override def isLocal: Boolean = true

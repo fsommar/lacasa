@@ -92,6 +92,7 @@ lazy val akka = (project in file("akka"))
     name := "lacasa-akka",
     commonSettings,
     pluginSettings,
+    scalacOptions += "-language:implicitConversions",
     libraryDependencies += { "org.scala-lang" % "scala-reflect" % scalaVersion.value },
     libraryDependencies += "com.typesafe.akka" %% "akka-actor" % "2.4.14",
     libraryDependencies += "com.typesafe.akka" %% "akka-testkit" % "2.4.14"

@@ -8,10 +8,15 @@ import lacasa.{Box, Packed, Safe}
 
 object ActorRef {
 
-  implicit final class ActorRefOps(val ref: ActorRef) extends AnyVal {
+  implicit final class SafeActorRefOps(val ref: SafeActorRef) extends AnyVal {
     def ![T: Safe](msg: T): Unit = ref.tell(msg)
-    // def !(msg: Box[Any])(implicit access: msg.Access): Nothing = ref.tell(msg)(access)
   }
+
+  implicit final class ActorRefOps(val ref: ActorRef) extends AnyVal {
+    def !!(msg: Box[Any])(implicit access: msg.Access): Nothing =
+      ref.tell(msg)(access)
+  }
+  
 
   implicit val actorRefLogSource: akka.event.LogSource[ActorRef] = new akka.event.LogSource[ActorRef] {
     def genString(a: ActorRef) = a.path.toString
@@ -21,13 +26,15 @@ object ActorRef {
 
 }
 
-trait ActorRef extends java.lang.Comparable[ActorRef] {
+trait SafeActorRef extends java.lang.Comparable[ActorRef] {
 
   def tell[T: Safe](msg: T): Unit
 
-  // def tell(msg: Box[Any])(implicit access: msg.Access): Nothing
-
   def path: ActorPath
+}
+
+trait ActorRef extends SafeActorRef {
+  def tell(msg: Box[Any])(implicit access: msg.Access): Nothing
 }
 
 private[akka] trait ActorRefImpl extends ActorRef {
@@ -57,7 +64,7 @@ private[akka] trait ActorRefImpl extends ActorRef {
 }
 
 private[akka] class ActorRefAdapter(val unsafe: AkkaActorRef)
-  extends ActorRef with ActorRefImpl {
+  extends SafeActorRef with ActorRefImpl {
 
   override def path: ActorPath = unsafe.path
 
@@ -68,9 +75,10 @@ private[akka] class ActorRefAdapter(val unsafe: AkkaActorRef)
   // TODO: Work around package private methods in lacasa/akka internals,
   // e.g., by creating an unsafe evidence that needs to exist in order to
   // use .pack()
-  // override def tell(msg: Box[Any])(implicit access: msg.Access): Nothing = {
-  //   unsafe ! msg.pack()
-  // }
+  override def tell(msg: Box[Any])(implicit access: msg.Access): Nothing = {
+    unsafe ! lacasa.PackABoxHelper.pack(msg)
+    throw new lacasa.PackABoxHelper.NoReturnControl
+  }
 }
 
 object ActorRefAdapter {

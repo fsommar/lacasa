@@ -1,9 +1,6 @@
-import scala.language.implicitConversions
-
 import akka.lacasa.pattern.ask
 
-import akka.lacasa.actor.{Actor, ActorLogging, ActorSystem, ActorRef, Props}
-import lacasa.Safe
+import akka.lacasa.actor.{ActorLogging, ActorSystem, ActorRef, Props, OnlySafeActor => Actor}
 
 import scala.concurrent.{Await, ExecutionContext, Future}
 import scala.concurrent.duration._
@@ -25,6 +22,7 @@ object TestAkka {
   }
 
   object Message {
+    import lacasa.Safe
     implicit val MessageIsSafe   = new Safe[Message]   {}
     implicit val ReplyMsgIsSafe  = new Safe[ReplyMsg]  {}
     implicit val StopMsgIsSafe   = new Safe[StopMsg]   {}
@@ -38,7 +36,7 @@ object TestAkka {
   case class DebitMsg(sender: ActorRef, amount: Double) extends Message
   case class CreditMsg(sender: ActorRef, amount: Double, recipient: ActorRef) extends Message
 
-  protected class Teller(numAccounts: Int, numBankings: Int) extends Actor with ActorLogging {
+  protected class Teller(numAccounts: Int, numBankings: Int) extends Actor[Message] with ActorLogging {
 
     private val accounts = Array.tabulate[ActorRef](numAccounts)((i) => {
         context.system.actorOf(Props(
@@ -56,8 +54,7 @@ object TestAkka {
       generateWork()
     }
 
-    override def receive[T: Safe](msg: T) = msg match {
-    // override def receive: Receive = {
+    override def receive: Receive = {
       case sm: ReplyMsg =>
         numCompletedBankings += 1
         if (numCompletedBankings == numBankings) {
@@ -86,11 +83,9 @@ object TestAkka {
     }
   }
 
-  protected class Account(id: Int, var balance: Double) extends Actor with ActorLogging {
-    implicit val ec = context.executionContext
+  protected class Account(id: Int, var balance: Double) extends Actor[Message] with ActorLogging {
 
-    override def receive[T: Safe](msg: T) = msg match {
-    // override def receive: Receive = {
+    override def receive: Receive = {
       case dm: DebitMsg =>
         log.info("Received debit message with $" + dm.amount + ", balance is now $" + balance)
         balance += dm.amount

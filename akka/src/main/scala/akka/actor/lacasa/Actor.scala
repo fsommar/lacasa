@@ -22,9 +22,16 @@ object Actor {
 
 trait Actor {
 
+  // A drawback with this specific version is that it's possible to accidentally match on
+  // non-Safe types and assume that they will match since the compiler won't complain.
+  // Another solution would be to parameterize the trait itself to T and thus make it harder
+  // to accidentally match on a non-Safe value. In that case, it would be because a subtype of
+  // a Safe type is non-Safe, which isn't allowed anyway (but not enforced).
   def receive[T: Safe](msg: T): Unit
 
-  // def receiveSystem(msg: SystemMessage): Unit
+  def receive(msg: Box[Any])(implicit acc: msg.Access): Nothing
+
+  def receiveSystem: PartialFunction[SystemMessage, Unit] = AkkaActor.ignoringBehavior
 
   // Since the ActorAdapter already has initialized and set the head of the contextStack to null,
   // that's what's being matched for, and any other structure of the contextStack is an exception.
@@ -38,9 +45,43 @@ trait Actor {
  
   implicit final val self: ActorRef = context.self
 
+  implicit val executionContext: ExecutionContext = context.executionContext
+
    // TODO: SafeActorRef
   final def sender(): ActorRef = context.sender()
 }
+
+trait OnlySafe { self: Actor =>
+  def receive(msg: Box[Any])(implicit acc: msg.Access): Nothing =
+    AkkaActor.emptyBehavior.apply(msg)
+}
+
+trait NoSafe { self: Actor =>
+  def receive[T: Safe](msg: T): Unit =
+    AkkaActor.emptyBehavior.apply(msg) 
+}
+
+trait TypedSafe[U] { self: Actor =>
+  implicit val tag: scala.reflect.ClassTag[U]
+  implicit val safe: Safe[U] = implicitly
+
+  type Receive = PartialFunction[U, Unit]
+
+  override def receive(msg: Box[Any])(implicit acc: msg.Access): Nothing =
+    AkkaActor.emptyBehavior.apply(msg)
+  
+  final override def receive[T: Safe](msg: T): Unit =  msg match {
+    case x if tag.runtimeClass.isInstance(x) =>
+      receive(x.asInstanceOf[U])
+    case _ => AkkaActor.emptyBehavior.apply(msg)
+  }
+
+  def receive: Receive 
+}
+
+abstract class OnlySafeActor[T](implicit val tag: scala.reflect.ClassTag[T]) extends Actor with TypedSafe[T]
+
+trait SystemMessage
 
 private[akka] case class SafeWrapper[T](value: T) {
   implicit val safeEv: Safe[T] = implicitly
@@ -53,14 +94,17 @@ private class ActorAdapter(_actor: => Actor) extends AkkaActor {
 
   def running: Receive = {
     case packed: Packed[_] =>
-      ???
+      ref.receive(packed.box)(packed.access)
 
     case x: SafeWrapper[_] =>
       implicit val ev = x.safeEv
       ref.receive(x.value)
 
     case x =>
-      ???
+      // TODO: Throw/handle this exceptional case in a better way.
+      // E.g., provide an escape hatch for actors to still handle
+      // incoming messages from non-safe ("normal") actors.
+      AkkaActor.emptyBehavior.apply(x)
   }
 
   protected def start(): Unit = {
