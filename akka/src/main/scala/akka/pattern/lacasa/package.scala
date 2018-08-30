@@ -1,3 +1,3 @@
-package akka.pattern
+package akka.lacasa
 
-package object lacasa extends AskSupport
+package object pattern extends AskSupport

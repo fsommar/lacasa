@@ -1,6 +1,6 @@
-package akka.pattern.lacasa
+package akka.lacasa.pattern
 
-import akka.actor.lacasa.{ActorRef, ActorRefAdapter, SafeWrapper}
+import akka.lacasa.actor.{ActorRef, ActorRefAdapter, SafeWrapper}
 import akka.util.Timeout
 
 import scala.concurrent.{ExecutionContext, Future}

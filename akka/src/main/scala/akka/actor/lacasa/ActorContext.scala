@@ -1,4 +1,4 @@
-package akka.actor.lacasa
+package akka.lacasa.actor
 
 import scala.concurrent.{ExecutionContextExecutor}
 

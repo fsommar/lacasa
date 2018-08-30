@@ -1,8 +1,8 @@
 import scala.language.implicitConversions
 
-import akka.pattern.lacasa.ask
+import akka.lacasa.pattern.ask
 
-import akka.actor.lacasa.{Actor, ActorLogging, ActorSystem, ActorRef, Props}
+import akka.lacasa.actor.{Actor, ActorLogging, ActorSystem, ActorRef, Props}
 import lacasa.Safe
 
 import scala.concurrent.{Await, ExecutionContext, Future}

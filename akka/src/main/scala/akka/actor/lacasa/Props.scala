@@ -1,4 +1,4 @@
-package akka.actor.lacasa
+package akka.lacasa.actor
 
 object Props {
   val empty: Props = PropsImpl(akka.actor.Props.empty)

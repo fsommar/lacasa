@@ -1,4 +1,4 @@
-package akka.actor.lacasa
+package akka.lacasa.actor
 
 import akka.actor.{Actor => AkkaActor, ActorContext => AkkaActorContext, ActorRef => AkkaActorRef,
                    ActorPath, RootActorPath, Address, Terminated, ActorInitializationException}
