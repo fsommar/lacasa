@@ -3,13 +3,13 @@ package akka.lacasa.actor
 import akka.actor.{Actor => AkkaActor, ActorContext => AkkaActorContext, ActorRef => AkkaActorRef,
                    ActorPath, RootActorPath, Address, Terminated, ActorInitializationException}
 
-import lacasa.{Box, Packed, Safe}
+import lacasa.{Box, Packed}
 
 
 object ActorRef {
 
   implicit final class SafeActorRefOps(val ref: SafeActorRef) extends AnyVal {
-    def ![T: Safe](msg: T): Unit = ref.tell(msg)
+    def ![T: lacasa.Safe](msg: T): Unit = ref.tell(msg)
   }
 
   implicit final class ActorRefOps(val ref: ActorRef) extends AnyVal {
@@ -28,7 +28,7 @@ object ActorRef {
 
 trait SafeActorRef extends java.lang.Comparable[ActorRef] {
 
-  def tell[T: Safe](msg: T): Unit
+  def tell[T: lacasa.Safe](msg: T): Unit
 
   def path: ActorPath
 }
@@ -68,7 +68,7 @@ private[akka] class ActorRefAdapter(val unsafe: AkkaActorRef)
 
   override def path: ActorPath = unsafe.path
 
-  override def tell[T: Safe](msg: T): Unit = {
+  override def tell[T: lacasa.Safe](msg: T): Unit = {
     unsafe ! new SafeWrapper(msg)
   }
 

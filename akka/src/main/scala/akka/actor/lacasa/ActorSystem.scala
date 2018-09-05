@@ -5,8 +5,6 @@ import scala.concurrent.Future
 import akka.actor.{ActorPath, RootActorPath, Address, Terminated}
 import akka.util.Timeout
 
-import lacasa.{Safe}
-
 abstract class ActorSystem extends ActorRef {
   /**
    * The name of this actor system, used to distinguish multiple ones within
@@ -30,7 +28,7 @@ private class ActorSystemAdapter(val untyped: akka.actor.ActorSystemImpl)
   // untyped.assertInitialized()
 
   // Members declared in akka.lacasa.actor.ActorRef
-  override def tell[T: Safe](msg: T): Unit = {
+  override def tell[T: lacasa.Safe](msg: T): Unit = {
     untyped.guardian ! msg
   }
 

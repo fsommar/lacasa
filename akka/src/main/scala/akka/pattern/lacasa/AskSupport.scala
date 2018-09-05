@@ -5,8 +5,6 @@ import akka.util.Timeout
 
 import scala.concurrent.{ExecutionContext, Future}
 
-import lacasa.Safe
-
 trait AskSupport {
   implicit def ask(actorRef: ActorRef): AskableActorRef =
     new AskableActorRef(actorRef.asInstanceOf[ActorRefAdapter].unsafe)
@@ -14,8 +12,9 @@ trait AskSupport {
 
 final class AskableActorRef(val actorRef: akka.actor.ActorRef) extends AnyVal {
   
-  def ask[Req: Safe, Res: Safe](msg: Req, sender: ActorRef = ActorRef.noSender)
-                               (implicit timeout: Timeout, ec: ExecutionContext): Future[Res] = {
+  def ask[Req: lacasa.Safe, Res: lacasa.Safe]
+    (msg: Req, sender: ActorRef = ActorRef.noSender)
+    (implicit timeout: Timeout, ec: ExecutionContext): Future[Res] = {
     akka.pattern.ask(actorRef, new SafeWrapper(msg), sender.asInstanceOf[ActorRefAdapter].unsafe)(timeout)
       .map {
         case _: SafeWrapper[Res @unchecked] =>
@@ -27,7 +26,7 @@ final class AskableActorRef(val actorRef: akka.actor.ActorRef) extends AnyVal {
 
   def ?[Req, Res](msg: Req)
                  (implicit timeout: Timeout, ec: ExecutionContext,
-                  req: Safe[Req], res: Safe[Res]): Future[Res] =
+                  req: lacasa.Safe[Req], res: lacasa.Safe[Res]): Future[Res] =
       ask(msg, ActorRef.noSender)(req, res, timeout, ec)
 
 }

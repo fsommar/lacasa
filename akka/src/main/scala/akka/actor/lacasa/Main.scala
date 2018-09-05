@@ -1,6 +1,6 @@
 import akka.lacasa.pattern.ask
 
-import akka.lacasa.actor.{ActorLogging, ActorSystem, ActorRef, Props, Actor}
+import akka.lacasa.actor.{ActorLogging, ActorSystem, ActorRef, Props, Actor, Safe}
 
 import scala.concurrent.{Await, ExecutionContext, Future}
 import scala.concurrent.duration._
@@ -21,16 +21,7 @@ object TestAkka {
     system.terminate()
   }
 
-  object Message {
-    import lacasa.Safe
-    implicit val MessageIsSafe   = new Safe[Message]   {}
-    implicit val ReplyMsgIsSafe  = new Safe[ReplyMsg]  {}
-    implicit val StopMsgIsSafe   = new Safe[StopMsg]   {}
-    implicit val DebitMsgIsSafe  = new Safe[DebitMsg]  {}
-    implicit val CreditMsgIsSafe = new Safe[CreditMsg] {}
-  }
-
-  sealed trait Message
+  sealed trait Message extends Safe
   case class ReplyMsg() extends Message
   case class StopMsg() extends Message
   case class DebitMsg(sender: ActorRef, amount: Double) extends Message

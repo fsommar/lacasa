@@ -11,8 +11,13 @@ import akka.actor.{Actor => AkkaActor, ActorContext => AkkaActorContext, ActorRe
 import akka.event.LoggingAdapter
 import akka.util.Timeout
 
-import lacasa.{Box, Packed, Safe}
+import lacasa.{Box, Packed}
 
+trait Safe
+
+object Safe {
+  implicit def safeIsLaCasaSafe[T <: Safe]: lacasa.Safe[T] = new lacasa.Safe[T] {}
+}
 
 object BaseActor {
   implicit val actorLogSource: akka.event.LogSource[BaseActor] = new akka.event.LogSource[BaseActor] {
@@ -27,7 +32,7 @@ trait BaseActor {
   // Another solution would be to parameterize the trait itself to T and thus make it harder
   // to accidentally match on a non-Safe value. In that case, it would be because a subtype of
   // a Safe type is non-Safe, which isn't allowed anyway (but not enforced).
-  def receive[T: Safe](msg: T): Unit
+  def receive[T: lacasa.Safe](msg: T): Unit
 
   def receive(msg: Box[Any])(implicit acc: msg.Access): Nothing
 
@@ -56,20 +61,20 @@ trait OnlySafe { self: BaseActor =>
 }
 
 trait NoSafe { self: BaseActor =>
-  def receive[T: Safe](msg: T): Unit =
+  def receive[T: lacasa.Safe](msg: T): Unit =
     AkkaActor.emptyBehavior.apply(msg) 
 }
 
 trait TypedSafe[U] { self: BaseActor =>
   implicit val tag: scala.reflect.ClassTag[U]
-  implicit val safe: Safe[U]
+  implicit val safe: lacasa.Safe[U]
 
   type Receive = PartialFunction[U, Unit]
 
   override def receive(msg: Box[Any])(implicit acc: msg.Access): Nothing =
     AkkaActor.emptyBehavior.apply(msg)
   
-  final override def receive[T: Safe](msg: T): Unit =  msg match {
+  final override def receive[T: lacasa.Safe](msg: T): Unit =  msg match {
     case x if tag.runtimeClass.isInstance(x) =>
       receive(x.asInstanceOf[U])
     case _ => AkkaActor.emptyBehavior.apply(msg)
@@ -81,12 +86,12 @@ trait TypedSafe[U] { self: BaseActor =>
 abstract class NoSafeActor extends BaseActor with NoSafe
 
 abstract class Actor[T]
-  (implicit val safe: Safe[T], implicit val tag: scala.reflect.ClassTag[T])
+  (implicit val tag: scala.reflect.ClassTag[T], implicit val safe: lacasa.Safe[T])
   extends BaseActor with TypedSafe[T]
 
 trait SystemMessage
 
-private[akka] case class SafeWrapper[T](value: T)(implicit val safe: Safe[T])
+private[akka] case class SafeWrapper[T](val value: T)(implicit val safe: lacasa.Safe[T])
 
 private class ActorAdapter(_actor: => BaseActor) extends AkkaActor {
   val ref = _actor
@@ -98,8 +103,7 @@ private class ActorAdapter(_actor: => BaseActor) extends AkkaActor {
       ref.receive(packed.box)(packed.access)
 
     case x: SafeWrapper[_] =>
-      implicit val ev = x.safe
-      ref.receive(x.value)
+      ref.receive(x.value)(x.safe)
 
     case x =>
       // TODO: Throw/handle this exceptional case in a better way.
