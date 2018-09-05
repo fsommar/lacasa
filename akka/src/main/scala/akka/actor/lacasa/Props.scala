@@ -7,7 +7,7 @@ object Props {
   // def apply[T <: Actor: ClassTag](): Props =
   //   PropsImpl(akka.actor.Props[ActorAdapter])
 
-  def apply[T <: Actor](creator: ⇒ T): Props =
+  def apply[T <: BaseActor](creator: ⇒ T): Props =
     PropsImpl(akka.actor.Props(new ActorAdapter(creator)))
 }
 

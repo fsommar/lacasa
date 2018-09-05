@@ -14,13 +14,13 @@ import akka.util.Timeout
 import lacasa.{Box, Packed, Safe}
 
 
-object Actor {
-  implicit val actorLogSource: akka.event.LogSource[Actor] = new akka.event.LogSource[Actor] {
-    def genString(a: Actor) = a.self.path.toString
+object BaseActor {
+  implicit val actorLogSource: akka.event.LogSource[BaseActor] = new akka.event.LogSource[BaseActor] {
+    def genString(a: BaseActor) = a.self.path.toString
   }
 }
 
-trait Actor {
+trait BaseActor {
 
   // A drawback with this specific version is that it's possible to accidentally match on
   // non-Safe types and assume that they will match since the compiler won't complain.
@@ -47,23 +47,22 @@ trait Actor {
 
   implicit val executionContext: ExecutionContext = context.executionContext
 
-   // TODO: SafeActorRef
-  final def sender(): ActorRef = context.sender()
+  final def sender(): SafeActorRef = context.sender()
 }
 
-trait OnlySafe { self: Actor =>
+trait OnlySafe { self: BaseActor =>
   def receive(msg: Box[Any])(implicit acc: msg.Access): Nothing =
     AkkaActor.emptyBehavior.apply(msg)
 }
 
-trait NoSafe { self: Actor =>
+trait NoSafe { self: BaseActor =>
   def receive[T: Safe](msg: T): Unit =
     AkkaActor.emptyBehavior.apply(msg) 
 }
 
-trait TypedSafe[U] { self: Actor =>
+trait TypedSafe[U] { self: BaseActor =>
   implicit val tag: scala.reflect.ClassTag[U]
-  implicit val safe: Safe[U] = implicitly
+  implicit val safe: Safe[U]
 
   type Receive = PartialFunction[U, Unit]
 
@@ -79,15 +78,17 @@ trait TypedSafe[U] { self: Actor =>
   def receive: Receive 
 }
 
-abstract class OnlySafeActor[T](implicit val tag: scala.reflect.ClassTag[T]) extends Actor with TypedSafe[T]
+abstract class NoSafeActor extends BaseActor with NoSafe
+
+abstract class Actor[T]
+  (implicit val safe: Safe[T], implicit val tag: scala.reflect.ClassTag[T])
+  extends BaseActor with TypedSafe[T]
 
 trait SystemMessage
 
-private[akka] case class SafeWrapper[T](value: T) {
-  implicit val safeEv: Safe[T] = implicitly
-}
+private[akka] case class SafeWrapper[T](value: T)(implicit val safe: Safe[T])
 
-private class ActorAdapter(_actor: => Actor) extends AkkaActor {
+private class ActorAdapter(_actor: => BaseActor) extends AkkaActor {
   val ref = _actor
 
   def receive = running
@@ -97,7 +98,7 @@ private class ActorAdapter(_actor: => Actor) extends AkkaActor {
       ref.receive(packed.box)(packed.access)
 
     case x: SafeWrapper[_] =>
-      implicit val ev = x.safeEv
+      implicit val ev = x.safe
       ref.receive(x.value)
 
     case x =>
@@ -112,7 +113,7 @@ private class ActorAdapter(_actor: => Actor) extends AkkaActor {
   }
 }
 
-trait ActorLogging { this: Actor ⇒
+trait ActorLogging { this: BaseActor ⇒
   private var _log: LoggingAdapter = _
 
   def log: LoggingAdapter = {

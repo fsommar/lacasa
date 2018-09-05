@@ -22,8 +22,7 @@ trait ActorContext {
    */
   def system: ActorSystem
 
-  // TODO: SafeActorRef
-  def sender(): ActorRef
+  def sender(): SafeActorRef
 
   /**
    * The list of child Actors created by this Actor during its lifetime that

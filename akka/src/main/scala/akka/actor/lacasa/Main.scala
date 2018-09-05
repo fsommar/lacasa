@@ -1,6 +1,6 @@
 import akka.lacasa.pattern.ask
 
-import akka.lacasa.actor.{ActorLogging, ActorSystem, ActorRef, Props, OnlySafeActor => Actor}
+import akka.lacasa.actor.{ActorLogging, ActorSystem, ActorRef, Props, Actor}
 
 import scala.concurrent.{Await, ExecutionContext, Future}
 import scala.concurrent.duration._
