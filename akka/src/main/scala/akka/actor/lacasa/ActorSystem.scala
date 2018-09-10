@@ -6,11 +6,8 @@ import akka.actor.{ActorPath, RootActorPath, Address, Terminated}
 import akka.util.Timeout
 
 abstract class ActorSystem extends ActorRef {
-  /**
-   * The name of this actor system, used to distinguish multiple ones within
-   * the same JVM & class loader.
-   */
   def name: String
+  def actorOf(props: Props): ActorRef
   def actorOf(props: Props, name: String): ActorRef
   def terminate(): scala.concurrent.Future[Terminated]
 }
@@ -79,6 +76,9 @@ private class ActorSystemAdapter(val untyped: akka.actor.ActorSystemImpl)
     val ref = untyped.systemActorOf(PropsAdapter(props), name)
     Future.successful(ActorRefAdapter(ref))
   }
+
+  override def actorOf(props: Props): ActorRef =
+    ActorRefAdapter(untyped.actorOf(PropsAdapter(props)))
 
   override def actorOf(props: Props, name: String): ActorRef =
     ActorRefAdapter(untyped.actorOf(PropsAdapter(props), name))

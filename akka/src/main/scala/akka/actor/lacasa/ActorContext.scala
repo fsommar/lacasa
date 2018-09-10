@@ -94,25 +94,6 @@ private[akka] final class ActorContextAdapter(val untyped: akka.actor.ActorConte
   override def child(name: String) = untyped.child(name).map(ActorRefAdapter(_))
   override def spawn(name: String, props: Props = Props.empty) =
     ActorContextAdapter.spawn(untyped, name, props)
-  override def stop(child: ActorRef): Unit =
-    if (child.path.parent == self.path) { // only if a direct child
-      toUntyped(child) match {
-        case f: akka.actor.FunctionRef ⇒
-          val cell = untyped.asInstanceOf[akka.actor.ActorCell]
-          cell.removeFunctionRef(f)
-        case c ⇒
-          untyped.child(child.path.name) match {
-            case Some(`c`) ⇒
-              untyped.stop(c)
-            case _ ⇒
-            // child that was already stopped
-          }
-      }
-    } else {
-      throw new IllegalArgumentException(
-        "Only direct children of an actor can be stopped through the actor context, " +
-          s"but [$child] is not a child of [$self]. Stopping other actors has to be expressed as " +
-          "an explicit stop message that the actor accepts.")
-    }
+  override def stop(child: ActorRef): Unit = untyped.stop(toUntyped(child))
   override def executionContext: ExecutionContextExecutor = untyped.dispatcher
 }

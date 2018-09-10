@@ -1,3 +1,5 @@
+package examples.lacasa
+
 import akka.lacasa.pattern.ask
 
 import akka.lacasa.actor.{ActorLogging, ActorSystem, ActorRef, Props, Actor, Safe}
