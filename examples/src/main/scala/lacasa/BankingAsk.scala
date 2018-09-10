@@ -8,9 +8,9 @@ import scala.util.Random
 
 import akka.util.Timeout
 
-object TestAkka {
+object BankingAsk {
   def main(args: Array[String]) {
-    val system = ActorSystem("TestAkka")
+    val system = ActorSystem("BankingAsk")
 
     val master: ActorRef = system.actorOf(Props(
       new Teller(

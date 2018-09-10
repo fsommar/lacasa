@@ -98,6 +98,14 @@ lazy val akka = (project in file("akka"))
     libraryDependencies += "com.typesafe.akka" %% "akka-testkit" % "2.4.14"
   )
 
+lazy val examples = (project in file("examples"))
+.dependsOn(akka)
+.settings (
+  name := "lacasa-examples",
+  commonSettings,
+  pluginSettings
+)
+
 def publishLocation(version: String) = {
   val nexus = "https://oss.sonatype.org/"
   if (version.trim.endsWith("SNAPSHOT"))
