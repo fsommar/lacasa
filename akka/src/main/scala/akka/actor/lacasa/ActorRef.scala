@@ -8,6 +8,8 @@ import lacasa.{Box, Packed}
 
 object ActorRef {
 
+  implicit def actorRefIsSafe[T <: SafeActorRef]: lacasa.Safe[T] = new lacasa.Safe[T] {}
+
   implicit final class SafeActorRefOps(val ref: SafeActorRef) extends AnyVal {
     def ![T: lacasa.Safe](msg: T): Unit = ref.tell(msg)
   }

@@ -85,6 +85,8 @@ trait TypedSafe[U] { self: BaseActor =>
 
 abstract class NoSafeActor extends BaseActor with NoSafe
 
+abstract class OnlySafeActor extends BaseActor with OnlySafe
+
 abstract class Actor[T]
   (implicit val tag: scala.reflect.ClassTag[T], implicit val safe: lacasa.Safe[T])
   extends BaseActor with TypedSafe[T]
