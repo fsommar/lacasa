@@ -17,6 +17,12 @@ object ActorRef {
   implicit final class ActorRefOps(val ref: ActorRef) extends AnyVal {
     def !!(msg: Box[Any])(implicit access: msg.Access): Nothing =
       ref.tell(msg)(access)
+
+    def tellAndThen[S](msg: Box[Any])(cont: () => S)(implicit access: msg.Access): Nothing = {
+      Box.unsafe(ref.tell(msg)(access))
+      cont()
+      msg.consume
+    }
   }
   
 

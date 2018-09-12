@@ -34,7 +34,7 @@ trait BaseActor {
   // a Safe type is non-Safe, which isn't allowed anyway (but not enforced).
   def receive[T: lacasa.Safe](msg: T): Unit
 
-  def receive(msg: Box[Any])(implicit acc: msg.Access): Nothing
+  def receive(msg: Box[Any])(implicit acc: msg.Access): Unit
 
   def receiveSystem: PartialFunction[SystemMessage, Unit] = AkkaActor.ignoringBehavior
 
@@ -53,10 +53,12 @@ trait BaseActor {
   implicit val executionContext: ExecutionContext = context.executionContext
 
   final def sender(): SafeActorRef = context.sender()
+
+  protected[akka] def preStart(): Unit = {}
 }
 
 trait OnlySafe { self: BaseActor =>
-  def receive(msg: Box[Any])(implicit acc: msg.Access): Nothing =
+  def receive(msg: Box[Any])(implicit acc: msg.Access): Unit =
     AkkaActor.emptyBehavior.apply(msg)
 }
 
@@ -71,7 +73,7 @@ trait TypedSafe[U] { self: BaseActor =>
 
   type Receive = PartialFunction[U, Unit]
 
-  override def receive(msg: Box[Any])(implicit acc: msg.Access): Nothing =
+  override def receive(msg: Box[Any])(implicit acc: msg.Access): Unit =
     AkkaActor.emptyBehavior.apply(msg)
   
   final override def receive[T: lacasa.Safe](msg: T): Unit =  msg match {
@@ -98,12 +100,16 @@ private[akka] case class SafeWrapper[T](val value: T)(implicit val safe: lacasa.
 private class ActorAdapter(_actor: => BaseActor) extends AkkaActor {
   val ref = _actor
 
+  Box.unsafe(ref.preStart())
+
   def receive = running
 
   def running: Receive = {
     case packed: Packed[_] =>
-      ref.receive(packed.box)(packed.access)
-
+      Box.unsafe({
+        ref.receive(packed.box)(packed.access)
+      })
+      
     case x: SafeWrapper[_] =>
       ref.receive(x.value)(x.safe)
 

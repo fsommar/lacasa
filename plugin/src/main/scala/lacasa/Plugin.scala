@@ -297,8 +297,14 @@ class Plugin(val global: Global) extends NscPlugin { self =>
       "scala.spores"
     )
 
+    val okLaCasaAkkaModules: Set[String] = Set(
+      "akka.lacasa.actor.ActorRef",
+      "akka.lacasa.actor.Safe"
+    )
+
     val okModules =
       okLaCasaModules ++
+      okLaCasaAkkaModules ++
       okJavaModules ++
       okScalaRuntimeModules ++
       okScalaLibraryModules ++

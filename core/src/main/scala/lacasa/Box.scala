@@ -7,7 +7,7 @@ import scala.reflect.{ClassTag, classTag}
 import scala.collection.immutable
 import scala.util.control.ControlThrowable
 
-private class NoReturnControl extends ControlThrowable {
+private[lacasa] class NoReturnControl extends ControlThrowable {
   // do not fill in stack trace for efficiency
   final override def fillInStackTrace(): Throwable = this
 }
@@ -57,7 +57,7 @@ object Box {
    */
   def unsafe(body: => Unit): Unit = {
     try {
-      body
+      val _x = body
     } catch {
       case _: NoReturnControl =>
         uncheckedCatchControl
@@ -93,6 +93,7 @@ object Safe {
   implicit val longIsSafe: Safe[Long] = new Safe[Long] {}
   implicit val doubleIsSafe: Safe[Double] = new Safe[Double] {}
   implicit val stringIsSafe: Safe[String] = new Safe[String] {}
+  implicit val booleanIsSafe: Safe[Boolean] = new Safe[Boolean] {}
 
   implicit def tuple2IsSafe[T, S](implicit one: Safe[T], two: Safe[S]): Safe[(T, S)] = new Safe[(T, S)] {}
   implicit def tuple3IsSafe[T: Safe, S: Safe, R: Safe]: Safe[(T, S, R)] = new Safe[(T, S, R)] {}
@@ -122,10 +123,22 @@ sealed class Box[+T] private (private[lacasa] val instance: T) {
     }
   }
 
-  def open(fun: Function[T, Unit])(implicit access: CanAccess { type C = self.C }): Box[T] = {
+  def open(fun: Function[T, Unit])(implicit access: Access): Box[T] = {
     fun(instance)
     self
   }
+
+  def consume(): Nothing = {
+    throw new NoReturnControl
+  }
+
+  def asBoxOf[U](fun: Function[Packed[U], Unit])(implicit access: Access): Nothing = {
+    fun(new Box(instance.asInstanceOf[U]).pack)
+    consume
+  }
+
+  def isBoxOf[U: scala.reflect.ClassTag]: Boolean =
+    instance.isInstanceOf[U]
 
   def extract[S: Safe](fun: Function[T, S])(implicit access: Access): S = {
     fun(instance)
@@ -180,6 +193,7 @@ sealed class Box[+T] private (private[lacasa] val instance: T) {
 }
 
 sealed trait Packed[+T] {
+  type Access = CanAccess { type C = box.C }
   val box: Box[T]
-  implicit val access: CanAccess { type C = box.C }
+  implicit val access: Access
 }

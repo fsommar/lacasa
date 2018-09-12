@@ -50,13 +50,6 @@ object NQueensConfig {
     def priority(x: Int): Int =
       Math.min(PRIORITIES - 1, Math.max(0, x))
 
-    case class WorkMessage(priority: Int, data: Array[Int], depth: Int)
-
-    case class DoneMessage()
-
-    case class ResultMessage()
-
-    case class StopMessage()
 }
 
 object NQueens {
@@ -78,6 +71,14 @@ object NQueens {
     val solutionsLimit = NQueensConfig.SOLUTIONS_LIMIT
     val valid = actSolution >= solutionsLimit && actSolution <= expSolution
   }
+  
+  case class WorkMessage(priority: Int, data: Array[Int], depth: Int)
+
+  case class DoneMessage()
+
+  case class ResultMessage()
+
+  case class StopMessage()
 
   object Master {
     var resultCounter: Long = 0
@@ -95,30 +96,32 @@ object NQueens {
     private var numWorkSent: Int = 0
     private var numWorkCompleted: Int = 0
 
-    val inArray: Array[Int] = new Array[Int](0)
-    val workMessage = new NQueensConfig.WorkMessage(NQueensConfig.priority(priorities), inArray, 0)
-    sendWork(workMessage)
+    sendWork(
+      WorkMessage(
+        NQueensConfig.priority(priorities),
+        new Array[Int](0),
+        0))
 
-    private def sendWork(workMessage: NQueensConfig.WorkMessage) {
+    private def sendWork(workMessage: WorkMessage) {
       workers(messageCounter) ! workMessage
       messageCounter = (messageCounter + 1) % numWorkers
       numWorkSent += 1
     }
 
     override def receive: Receive = {
-      case workMessage: NQueensConfig.WorkMessage =>
+      case workMessage: WorkMessage =>
         sendWork(workMessage)
-      case _: NQueensConfig.ResultMessage =>
+      case _: ResultMessage =>
         Master.resultCounter += 1
         if (Master.resultCounter == solutionsLimit) {
           requestWorkersToTerminate()
         }
-      case _: NQueensConfig.DoneMessage =>
+      case _: DoneMessage =>
         numWorkCompleted += 1
         if (numWorkCompleted == numWorkSent) {
           requestWorkersToTerminate()
         }
-      case _: NQueensConfig.StopMessage =>
+      case _: StopMessage =>
         numWorkersTerminated += 1
         if (numWorkersTerminated == numWorkers) {
           println("Done!!")
@@ -128,7 +131,7 @@ object NQueens {
     }
 
     def requestWorkersToTerminate() {
-      workers foreach { _ ! NQueensConfig.StopMessage() }
+      workers foreach { _ ! StopMessage() }
     }
   }
 
@@ -138,38 +141,36 @@ object NQueens {
     private final val size: Int = NQueensConfig.SIZE
 
     override def receive: Receive = {
-      case workMessage: NQueensConfig.WorkMessage =>
-        nqueensKernelPar(workMessage)
-        master ! NQueensConfig.DoneMessage()
-      case msg: NQueensConfig.StopMessage =>
+      case msg: WorkMessage if size == msg.depth || msg.depth >= threshold =>
+        nqueensKernelPar(msg)
+        master ! DoneMessage()
+      case msg: WorkMessage =>
+         nqueensKernelPar(msg)
+      case msg: StopMessage =>
         master ! msg
         context.stop(self)
-      case _ =>
     }
 
-    def nqueensKernelPar(workMessage: NQueensConfig.WorkMessage) {
+    def nqueensKernelPar(workMessage: WorkMessage) {
       val depth: Int = workMessage.depth
-      if (size == depth) {
-        master ! NQueensConfig.ResultMessage()
-      } else if (depth >= threshold) {
-        nqueensKernelSeq(workMessage.data, depth)
-      } else {
-        val newPriority: Int = workMessage.priority - 1
-        val newDepth: Int = depth + 1
-        for (i <- 0 until size) {
+      val newPriority: Int = workMessage.priority - 1
+      val newDepth: Int = depth + 1
+      (0 until size)
+        .map { i =>
           val newData: Array[Int] = new Array[Int](newDepth)
           System.arraycopy(workMessage.data, 0, newData, 0, depth)
           newData(depth) = i
-          if (NQueensConfig.boardValid(newDepth, newData)) {
-            master ! new NQueensConfig.WorkMessage(NQueensConfig.priority(newPriority), newData, newDepth)
-          }
+          newData
         }
-      }
+        .filter { NQueensConfig.boardValid(newDepth, _) }
+        .foreach { master ! new WorkMessage(NQueensConfig.priority(newPriority), _, newDepth) }
+
+      master ! DoneMessage()
     }
 
     def nqueensKernelSeq(a: Array[Int], depth: Int) {
       if (size == depth) {
-        master ! NQueensConfig.ResultMessage()
+        master ! ResultMessage()
       } else {
         val b: Array[Int] = new Array[Int](depth + 1)
         for (i <- 0 until size) {
