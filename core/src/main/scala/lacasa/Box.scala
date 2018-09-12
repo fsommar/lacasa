@@ -138,7 +138,7 @@ sealed class Box[+T] private (private[lacasa] val instance: T) {
   }
 
   def isBoxOf[U: scala.reflect.ClassTag]: Boolean =
-    instance.isInstanceOf[U]
+    implicitly[ClassTag[U]].runtimeClass.isInstance(instance)
 
   def extract[S: Safe](fun: Function[T, S])(implicit access: Access): S = {
     fun(instance)

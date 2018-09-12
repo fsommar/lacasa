@@ -1,6 +1,6 @@
 package examples.lacasa
 
-import akka.lacasa.actor.{Actor, ActorRef, ActorSystem, BaseActor, Props, Safe}
+import akka.lacasa.actor.{ActorRef, ActorSystem, BaseActor => Actor, Props, Safe}
 import lacasa.Box
 
 object NQueensConfig {
@@ -85,7 +85,7 @@ object NQueens {
     var resultCounter: Long = 0
   }
 
-  private class Master(numWorkers: Int, priorities: Int) extends BaseActor {
+  private class Master(numWorkers: Int, priorities: Int) extends Actor {
 
     private val solutionsLimit = NQueensConfig.SOLUTIONS_LIMIT
     private final val workers = Array.tabulate[ActorRef](numWorkers)(i => {
@@ -147,7 +147,7 @@ object NQueens {
     }
   }
 
-  private class Worker(master: ActorRef, id: Int) extends BaseActor {
+  private class Worker(master: ActorRef, id: Int) extends Actor {
 
     private final val threshold: Int = NQueensConfig.THRESHOLD
     private final val size: Int = NQueensConfig.SIZE

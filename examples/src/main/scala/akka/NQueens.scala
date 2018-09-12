@@ -142,7 +142,7 @@ object NQueens {
 
     override def receive: Receive = {
       case msg: WorkMessage if size == msg.depth || msg.depth >= threshold =>
-        nqueensKernelPar(msg)
+        nqueensKernelSeq(msg.data, msg.depth)
         master ! DoneMessage()
       case msg: WorkMessage =>
          nqueensKernelPar(msg)
