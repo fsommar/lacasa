@@ -1,8 +1,9 @@
-package examples.akka
+package examples.lacasa
 
-import akka.actor.{Actor, ActorRef, ActorSystem, Props}
+import akka.lacasa.actor.{ActorRef, ActorSystem, BaseActor => Actor, Props, Safe}
+import lacasa.Box
 
-object NQueensConfig {
+object NQueensBoxConfig {
 
     val SOLUTIONS: Array[Long] = Array(
             1,
@@ -52,32 +53,33 @@ object NQueensConfig {
 
 }
 
-object NQueens {
+object NQueensBox {
 
   def main(args: Array[String]) {
-    val numWorkers: Int = NQueensConfig.NUM_WORKERS
-    val priorities: Int = NQueensConfig.PRIORITIES
+    val numWorkers: Int = NQueensBoxConfig.NUM_WORKERS
+    val priorities: Int = NQueensBoxConfig.PRIORITIES
+    val master: Array[ActorRef] = Array(null)
 
-    val system = ActorSystem("NQueens")
+    val system = ActorSystem("NQueensBox")
 
-    system.actorOf(Props(new Master(numWorkers, priorities)))
+    master(0) = system.actorOf(Props(new Master(numWorkers, priorities)))
 
     Thread.sleep(6000)
     system.terminate()
 
-    val expSolution = NQueensConfig.SOLUTIONS(NQueensConfig.SIZE - 1)
+    val expSolution = NQueensBoxConfig.SOLUTIONS(NQueensBoxConfig.SIZE - 1)
     val actSolution = Master.resultCounter
-    val solutionsLimit = NQueensConfig.SOLUTIONS_LIMIT
+    val solutionsLimit = NQueensBoxConfig.SOLUTIONS_LIMIT
     val valid = actSolution >= solutionsLimit && actSolution <= expSolution
   }
   
   case class WorkMessage(priority: Int, data: Array[Int], depth: Int)
 
-  case class DoneMessage()
+  case class DoneMessage() extends Safe
 
-  case class ResultMessage()
+  case class ResultMessage() extends Safe
 
-  case class StopMessage()
+  case class StopMessage() extends Safe
 
   object Master {
     var resultCounter: Long = 0
@@ -85,7 +87,7 @@ object NQueens {
 
   private class Master(numWorkers: Int, priorities: Int) extends Actor {
 
-    private val solutionsLimit = NQueensConfig.SOLUTIONS_LIMIT
+    private val solutionsLimit = NQueensBoxConfig.SOLUTIONS_LIMIT
     private final val workers = Array.tabulate[ActorRef](numWorkers)(i => {
       context.system.actorOf(Props(new Worker(self, i)))
     })
@@ -95,21 +97,32 @@ object NQueens {
     private var numWorkSent: Int = 0
     private var numWorkCompleted: Int = 0
 
-    sendWork(
-      WorkMessage(
-        NQueensConfig.priority(priorities),
-        new Array[Int](0),
-        0))
-
-    private def sendWork(workMessage: WorkMessage) {
-      workers(messageCounter) ! workMessage
-      messageCounter = (messageCounter + 1) % numWorkers
-      numWorkSent += 1
+    override def preStart(): Unit = {
+      Box.mkBoxFor(
+        WorkMessage(
+          NQueensBoxConfig.priority(priorities),
+          new Array[Int](0),
+          0)) { packed =>
+        sendWork(packed.box)(packed.access)
+      }
     }
 
-    override def receive: Receive = {
-      case workMessage: WorkMessage =>
-        sendWork(workMessage)
+    private def sendWork(msg: Box[WorkMessage])(implicit acc: msg.Access): Unit = {
+      workers(messageCounter).tellAndThen(msg) { () =>
+        messageCounter = (messageCounter + 1) % numWorkers
+        numWorkSent += 1
+      }
+    }
+
+    override def receive(msg: Box[Any])(implicit acc: msg.Access): Unit = {
+      if (msg.isBoxOf[WorkMessage]) {
+        msg.asBoxOf[WorkMessage] { packed =>
+          sendWork(packed.box)(packed.access)
+        }
+      }
+    }
+
+    override def receive[T: lacasa.Safe](msg: T): Unit = msg match {
       case _: ResultMessage =>
         Master.resultCounter += 1
         if (Master.resultCounter == solutionsLimit) {
@@ -136,38 +149,48 @@ object NQueens {
 
   private class Worker(master: ActorRef, id: Int) extends Actor {
 
-    private final val threshold: Int = NQueensConfig.THRESHOLD
-    private final val size: Int = NQueensConfig.SIZE
+    private final val threshold: Int = NQueensBoxConfig.THRESHOLD
+    private final val size: Int = NQueensBoxConfig.SIZE
 
-    override def receive: Receive = {
+    override def receive(msg: Box[Any])(implicit acc: msg.Access): Unit = msg open {
       case msg: WorkMessage if size == msg.depth || msg.depth >= threshold =>
-        nqueensKernelSeq(msg.data, msg.depth)
+        NQueensBoxKernelSeq(msg.data, msg.depth)
         master ! DoneMessage()
       case msg: WorkMessage =>
-         nqueensKernelPar(msg)
+        NQueensBoxKernelPar(msg)
+    }
+
+    override def receive[T: lacasa.Safe](msg: T): Unit = msg match {
       case msg: StopMessage =>
         master ! msg
         context.stop(self)
     }
 
-    def nqueensKernelPar(workMessage: WorkMessage) {
+    def NQueensBoxKernelPar(workMessage: WorkMessage) {
       val depth: Int = workMessage.depth
       val newPriority: Int = workMessage.priority - 1
       val newDepth: Int = depth + 1
-      (0 until size)
+      val validBoards =
+        (0 until size)
         .map { i =>
           val newData: Array[Int] = new Array[Int](newDepth)
           System.arraycopy(workMessage.data, 0, newData, 0, depth)
           newData(depth) = i
           newData
         }
-        .filter { NQueensConfig.boardValid(newDepth, _) }
-        .foreach { master ! new WorkMessage(NQueensConfig.priority(newPriority), _, newDepth) }
+        .filter { NQueensBoxConfig.boardValid(newDepth, _) }
 
-      master ! DoneMessage()
+      lacasa.Utils.loopAndThen(validBoards.toIterator)({ newData =>
+        Box.mkBoxFor(WorkMessage(NQueensBoxConfig.priority(newPriority), newData, newDepth)) { packed =>
+          implicit val acc = packed.access
+          master !! packed.box
+        }
+      })({ () =>
+        master ! DoneMessage()
+      })
     }
 
-    def nqueensKernelSeq(a: Array[Int], depth: Int) {
+    def NQueensBoxKernelSeq(a: Array[Int], depth: Int) {
       if (size == depth) {
         master ! ResultMessage()
       } else {
@@ -175,8 +198,8 @@ object NQueens {
         for (i <- 0 until size) {
           System.arraycopy(a, 0, b, 0, depth)
           b(depth) = i
-          if (NQueensConfig.boardValid(depth + 1, b)) {
-            nqueensKernelSeq(b, depth + 1)
+          if (NQueensBoxConfig.boardValid(depth + 1, b)) {
+            NQueensBoxKernelSeq(b, depth + 1)
           }
         }
       }
