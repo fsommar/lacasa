@@ -37,13 +37,15 @@ object Sieve {
 
   case class LongBox(value: Long)
 
+  case class ExitMessage()
+
   private class NumberProducerActor(limit: Long) extends Actor {
     override def receive: Receive = {
       case filterActor: ActorRef =>
         for (candidate <- (3L until limit) by 2L) {
           filterActor ! LongBox(candidate)
         }
-        filterActor ! "EXIT"
+        filterActor ! ExitMessage()
         context.stop(self)
     }
   }
@@ -77,7 +79,7 @@ object Sieve {
                 handleNewPrime(candidate.value)
               }
             }
-          case x: String =>
+          case x: ExitMessage =>
             if (nextFilterActor != null) {
               // Signal next actor for termination
               nextFilterActor ! x

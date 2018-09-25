@@ -1,6 +1,6 @@
 package examples.lacasa
 
-import akka.lacasa.actor.{OnlySafeActor, Actor, ActorRef, ActorSystem, Props, Safe}
+import akka.lacasa.actor.{Actor, ActorRef, ActorSystem, Props, Safe}
 
 object SieveConfig {
   val N = 100000
@@ -41,16 +41,14 @@ object Sieve {
 
   case class ExitMessage() extends Message
 
-  private class NumberProducerActor(limit: Long) extends OnlySafeActor {
-    override def receive[T: lacasa.Safe](msg: T): Unit = {
-      msg match {
-        case filterActor: ActorRef =>
-          for (candidate <- (3L until limit) by 2L) {
-            filterActor ! LongBox(candidate)
-          }
-          filterActor ! ExitMessage()
-          context.stop(self)
-      }
+  private class NumberProducerActor(limit: Long) extends Actor[ActorRef] {
+    override def receive: Receive = {
+      case filterActor: ActorRef =>
+        for (candidate <- (3L until limit) by 2L) {
+          filterActor ! LongBox(candidate)
+        }
+        filterActor ! ExitMessage()
+        context.stop(self)
     }
   }
 

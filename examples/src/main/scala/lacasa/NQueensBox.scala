@@ -1,6 +1,6 @@
 package examples.lacasa
 
-import akka.lacasa.actor.{ActorRef, ActorSystem, BaseActor => Actor, Props, Safe}
+import akka.lacasa.actor.{Actor, ActorRef, ActorSystem, Props, Safe}
 import lacasa.Box
 
 object NQueensBoxConfig {
@@ -58,11 +58,10 @@ object NQueensBox {
   def main(args: Array[String]) {
     val numWorkers: Int = NQueensBoxConfig.NUM_WORKERS
     val priorities: Int = NQueensBoxConfig.PRIORITIES
-    val master: Array[ActorRef] = Array(null)
 
     val system = ActorSystem("NQueensBox")
 
-    master(0) = system.actorOf(Props(new Master(numWorkers, priorities)))
+    system.actorOf(Props(new Master(numWorkers, priorities)))
 
     Thread.sleep(6000)
     system.terminate()
@@ -72,20 +71,22 @@ object NQueensBox {
     val solutionsLimit = NQueensBoxConfig.SOLUTIONS_LIMIT
     val valid = actSolution >= solutionsLimit && actSolution <= expSolution
   }
+
+  sealed trait Message extends Safe
   
   case class WorkMessage(priority: Int, data: Array[Int], depth: Int)
 
-  case class DoneMessage() extends Safe
+  case class DoneMessage() extends Message
 
-  case class ResultMessage() extends Safe
+  case class ResultMessage() extends Message
 
-  case class StopMessage() extends Safe
+  case class StopMessage() extends Message
 
   object Master {
     var resultCounter: Long = 0
   }
 
-  private class Master(numWorkers: Int, priorities: Int) extends Actor {
+  private class Master(numWorkers: Int, priorities: Int) extends Actor[Message] {
 
     private val solutionsLimit = NQueensBoxConfig.SOLUTIONS_LIMIT
     private final val workers = Array.tabulate[ActorRef](numWorkers)(i => {
@@ -114,15 +115,14 @@ object NQueensBox {
       }
     }
 
-    override def receive(msg: Box[Any])(implicit acc: msg.Access): Unit = {
+    override def receive(msg: Box[Any])(implicit acc: msg.Access): Unit =
       if (msg.isBoxOf[WorkMessage]) {
         msg.asBoxOf[WorkMessage] { packed =>
           sendWork(packed.box)(packed.access)
         }
       }
-    }
 
-    override def receive[T: lacasa.Safe](msg: T): Unit = msg match {
+    override def receive: Receive = {
       case _: ResultMessage =>
         Master.resultCounter += 1
         if (Master.resultCounter == solutionsLimit) {
@@ -147,26 +147,26 @@ object NQueensBox {
     }
   }
 
-  private class Worker(master: ActorRef, id: Int) extends Actor {
+  private class Worker(master: ActorRef, id: Int) extends Actor[Message] {
 
     private final val threshold: Int = NQueensBoxConfig.THRESHOLD
     private final val size: Int = NQueensBoxConfig.SIZE
 
     override def receive(msg: Box[Any])(implicit acc: msg.Access): Unit = msg open {
       case msg: WorkMessage if size == msg.depth || msg.depth >= threshold =>
-        NQueensBoxKernelSeq(msg.data, msg.depth)
+        nQueensBoxKernelSeq(msg.data, msg.depth)
         master ! DoneMessage()
       case msg: WorkMessage =>
-        NQueensBoxKernelPar(msg)
+        nQueensBoxKernelPar(msg)
     }
 
-    override def receive[T: lacasa.Safe](msg: T): Unit = msg match {
+    override def receive: Receive = {
       case msg: StopMessage =>
         master ! msg
         context.stop(self)
     }
 
-    def NQueensBoxKernelPar(workMessage: WorkMessage) {
+    def nQueensBoxKernelPar(workMessage: WorkMessage) {
       val depth: Int = workMessage.depth
       val newPriority: Int = workMessage.priority - 1
       val newDepth: Int = depth + 1
@@ -190,7 +190,7 @@ object NQueensBox {
       })
     }
 
-    def NQueensBoxKernelSeq(a: Array[Int], depth: Int) {
+    def nQueensBoxKernelSeq(a: Array[Int], depth: Int) {
       if (size == depth) {
         master ! ResultMessage()
       } else {
@@ -199,7 +199,7 @@ object NQueensBox {
           System.arraycopy(a, 0, b, 0, depth)
           b(depth) = i
           if (NQueensBoxConfig.boardValid(depth + 1, b)) {
-            NQueensBoxKernelSeq(b, depth + 1)
+            nQueensBoxKernelSeq(b, depth + 1)
           }
         }
       }

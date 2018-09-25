@@ -162,7 +162,7 @@ object NQueens {
           newData
         }
         .filter { NQueensConfig.boardValid(newDepth, _) }
-        .foreach { master ! new WorkMessage(NQueensConfig.priority(newPriority), _, newDepth) }
+        .foreach { master ! WorkMessage(NQueensConfig.priority(newPriority), _, newDepth) }
 
       master ! DoneMessage()
     }

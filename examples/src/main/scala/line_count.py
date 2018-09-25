@@ -12,6 +12,7 @@ cases = {
     "BitonicSort": "BSORT",
     "Chameneos": "CHAM",
     "NQueens": "NQN",
+    "NQueensBox": "NQN[box]",
     "Philosopher": "PHIL",
     "ProdConsBoundedBuffer": "PCBB",
     "Sieve": "SIEVE"
@@ -25,10 +26,15 @@ for case,keyword in cases.items():
     for dir in ['akka', 'lacasa']:
         s += " & "
         filename = os.path.join(dir_path, dir, case + '.scala')
-        analysis = pygount.source_analysis(filename, group=case)
-        lines = analysis.code - count_imports(filename)
-        print(keyword, dir, lines)
-        s += str(lines)
+        try:
+            analysis = pygount.source_analysis(filename, group=case)
+            lines = analysis.code - count_imports(filename)
+            print(keyword, dir, lines)
+            s += str(lines)
+        except:
+            print(keyword, dir, '-')
+            s += ' '
+
     s += r" \\ " + "\n"
 
 print(s)
