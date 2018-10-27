@@ -1,7 +1,7 @@
 package edu.rice.habanero.benchmarks.bitonicsort
 
-import akka.actor.{ActorRef, Props}
-import edu.rice.habanero.actors.{AkkaActor => Actor, AkkaActorState => ActorState}
+import akka.lacasa.actor.{ActorRef, Props, Safe}
+import edu.rice.habanero.actors.{LAkkaActor => Actor, LAkkaActorState => ActorState}
 import edu.rice.habanero.benchmarks.{Benchmark, BenchmarkRunner, PseudoRandom}
 
 import scala.collection.mutable.ListBuffer
@@ -9,13 +9,13 @@ import scala.collection.mutable.ListBuffer
 /**
  * @author <a href="http://shams.web.rice.edu/">Shams Imam</a> (shams@rice.edu)
  */
-object BitonicSortAkkaActorBenchmark {
+object BitonicSortLAkkaActorBenchmark {
 
   def main(args: Array[String]) {
-    BenchmarkRunner.runBenchmark(args, new BitonicSortAkkaActorBenchmark)
+    BenchmarkRunner.runBenchmark(args, new BitonicSortLAkkaActorBenchmark)
   }
 
-  private final class BitonicSortAkkaActorBenchmark extends Benchmark {
+  private final class BitonicSortLAkkaActorBenchmark extends Benchmark {
     def initialize(args: Array[String]) {
       BitonicSortConfig.parseArgs(args)
     }
@@ -49,7 +49,7 @@ object BitonicSortAkkaActorBenchmark {
     }
   }
 
-  private sealed trait Message
+  private sealed trait Message extends Safe
 
   private case class NextActorMessage(actor: ActorRef) extends Message
 

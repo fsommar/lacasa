@@ -2,9 +2,6 @@ package edu.rice.habanero.benchmarks.banking
 
 import edu.rice.habanero.benchmarks.BenchmarkRunner
 
-//remove if not needed
-import scala.collection.JavaConversions._
-
 object BankingConfig {
 
 // num accounts

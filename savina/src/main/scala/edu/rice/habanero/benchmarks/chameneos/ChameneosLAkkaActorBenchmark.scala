@@ -1,7 +1,7 @@
 package edu.rice.habanero.benchmarks.chameneos
 
-import akka.actor.{ActorRef, Props}
-import edu.rice.habanero.actors.{AkkaActor => Actor, AkkaActorState => ActorState}
+import akka.lacasa.actor.{ActorRef, Props}
+import edu.rice.habanero.actors.{LAkkaActor => Actor, LAkkaActorState => ActorState}
 import edu.rice.habanero.benchmarks.{Benchmark, BenchmarkRunner}
 import edu.rice.habanero.benchmarks.chameneos.ChameneosConfig._
 
@@ -9,13 +9,13 @@ import edu.rice.habanero.benchmarks.chameneos.ChameneosConfig._
  *
  * @author <a href="http://shams.web.rice.edu/">Shams Imam</a> (shams@rice.edu)
  */
-object ChameneosAkkaActorBenchmark {
+object ChameneosLAkkaActorBenchmark {
 
   def main(args: Array[String]) {
-    BenchmarkRunner.runBenchmark(args, new ChameneosAkkaActorBenchmark)
+    BenchmarkRunner.runBenchmark(args, new ChameneosLAkkaActorBenchmark)
   }
 
-  private final class ChameneosAkkaActorBenchmark extends Benchmark {
+  private final class ChameneosLAkkaActorBenchmark extends Benchmark {
     def initialize(args: Array[String]) {
       ChameneosConfig.parseArgs(args)
     }

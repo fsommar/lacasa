@@ -1,7 +1,7 @@
 package edu.rice.habanero.benchmarks.bndbuffer
 
-import akka.actor.{ActorRef, Props}
-import edu.rice.habanero.actors.{AkkaActor => Actor, AkkaActorState => ActorState}
+import akka.lacasa.actor.{ActorRef, Props}
+import edu.rice.habanero.actors.{LAkkaActor => Actor, LAkkaActorState => ActorState}
 import edu.rice.habanero.benchmarks.bndbuffer.ProdConsBoundedBufferConfig._
 import edu.rice.habanero.benchmarks.{Benchmark, BenchmarkRunner}
 
@@ -10,12 +10,12 @@ import scala.collection.mutable.ListBuffer
 /**
  * @author <a href="http://shams.web.rice.edu/">Shams Imam</a> (shams@rice.edu)
  */
-object ProdConsAkkaActorBenchmark {
+object ProdConsLAkkaActorBenchmark {
   def main(args: Array[String]) {
-    BenchmarkRunner.runBenchmark(args, new ProdConsAkkaActorBenchmark)
+    BenchmarkRunner.runBenchmark(args, new ProdConsLAkkaActorBenchmark)
   }
 
-  private final class ProdConsAkkaActorBenchmark extends Benchmark {
+  private final class ProdConsLAkkaActorBenchmark extends Benchmark {
     def initialize(args: Array[String]) {
       ProdConsBoundedBufferConfig.parseArgs(args)
     }
