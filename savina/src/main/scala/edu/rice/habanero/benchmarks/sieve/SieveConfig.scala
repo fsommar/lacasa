@@ -40,7 +40,7 @@ object SieveConfig {
     for (i <- startInc until endExc) {
       val remainder: Long = candidate % localPrimes(i)
       if (remainder == 0) {
-        false
+        return false
       }
     }
     true

@@ -24,9 +24,7 @@ abstract class LAkkaActor[MsgType](implicit val tag: scala.reflect.ClassTag[MsgT
   private val exitTracker = new AtomicBoolean(false)
 
   final override def receive(msg: Box[Any])(implicit acc: msg.Access): Unit =
-    msg.asBoxOf[MsgType] { packed =>
-      process(packed.box)(packed.access)
-    }
+    process(msg)(acc)
   
   final override def receive[T: lacasa.Safe](msg: T): Unit = msg match {
     case msg: StartLAkkaActorMessage =>
@@ -45,7 +43,7 @@ abstract class LAkkaActor[MsgType](implicit val tag: scala.reflect.ClassTag[MsgT
 
   def process(msg: MsgType): Unit
 
-  def process(msg: Box[MsgType])(implicit acc: msg.Access): Unit = {}
+  def process(msg: Box[Any])(implicit acc: msg.Access): Unit = {}
 
   def send(msg: MsgType) {
     self ! msg
@@ -58,7 +56,7 @@ abstract class LAkkaActor[MsgType](implicit val tag: scala.reflect.ClassTag[MsgT
   final def start() = {
     if (!hasStarted()) {
       onPreStart()
-      onPostStart()
+      Box.unsafe(onPostStart())
       startTracker.set(true)
     }
   }
