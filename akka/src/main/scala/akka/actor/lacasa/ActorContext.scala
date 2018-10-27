@@ -84,16 +84,16 @@ private[akka] object ActorContextAdapter {
 
 }
 
-private[akka] final class ActorContextAdapter(val untyped: akka.actor.ActorContext) extends ActorContext {
-  import ActorRefAdapter.toUntyped
+private[akka] final class ActorContextAdapter(val unsafe: akka.actor.ActorContext) extends ActorContext {
+  import ActorRefAdapter.toUnsafe
 
-  override def self = ActorRefAdapter(untyped.self)
-  override val system = ActorSystemAdapter(untyped.system)
-  override def sender() = ActorRefAdapter(untyped.sender())
-  override def children = untyped.children.map(ActorRefAdapter(_))
-  override def child(name: String) = untyped.child(name).map(ActorRefAdapter(_))
+  override def self = ActorRefAdapter(unsafe.self)
+  override val system = ActorSystemAdapter(unsafe.system)
+  override def sender() = ActorRefAdapter(unsafe.sender())
+  override def children = unsafe.children.map(ActorRefAdapter(_))
+  override def child(name: String) = unsafe.child(name).map(ActorRefAdapter(_))
   override def spawn(name: String, props: Props = Props.empty) =
-    ActorContextAdapter.spawn(untyped, name, props)
-  override def stop(child: ActorRef): Unit = untyped.stop(toUntyped(child))
-  override def executionContext: ExecutionContextExecutor = untyped.dispatcher
+    ActorContextAdapter.spawn(unsafe, name, props)
+  override def stop(child: ActorRef): Unit = unsafe.stop(toUnsafe(child))
+  override def executionContext: ExecutionContextExecutor = unsafe.dispatcher
 }

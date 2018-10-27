@@ -130,7 +130,7 @@ trait ActorLogging { this: BaseActor ⇒
 
   def log: LoggingAdapter = {
     if (_log eq null)
-      _log = akka.event.Logging(context.system.asInstanceOf[ActorSystemAdapter].untyped, this)
+      _log = akka.event.Logging(context.system.asInstanceOf[ActorSystemAdapter].unsafe, this)
     _log
   }
 

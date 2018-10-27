@@ -16,77 +16,79 @@ object ActorSystem {
 
   def apply(name: String): ActorSystem = wrap(akka.actor.ActorSystem(name))
 
-  def wrap(untyped: akka.actor.ActorSystem): ActorSystem =
-    ActorSystemAdapter(untyped.asInstanceOf[akka.actor.ActorSystemImpl])
+  def apply(name: String, config: com.typesafe.config.Config): ActorSystem =
+    wrap(akka.actor.ActorSystem(name, config))
+
+  def wrap(unsafe: akka.actor.ActorSystem): ActorSystem =
+    ActorSystemAdapter(unsafe.asInstanceOf[akka.actor.ActorSystemImpl])
 }
 
-private class ActorSystemAdapter(val untyped: akka.actor.ActorSystemImpl)
+private class ActorSystemAdapter(val unsafe: akka.actor.ActorSystemImpl)
   extends ActorSystem with ActorRef with ActorRefImpl {
-  // untyped.assertInitialized()
+  // unsafe.assertInitialized()
 
   // Members declared in akka.lacasa.actor.ActorRef
-  override def tell[T: lacasa.Safe](msg: T): Unit = {
-    untyped.guardian ! msg
-  }
+  override def tell[T: lacasa.Safe](msg: T, sender: ActorRef): Unit =
+    unsafe.guardian.tell(msg, ActorRefAdapter.toUnsafe(sender))
 
   override def tell(msg: lacasa.Box[Any])(implicit acc: msg.Access): Nothing = {
-    untyped.guardian ! lacasa.PackABoxHelper.pack(msg)
+    unsafe.guardian ! lacasa.PackABoxHelper.pack(msg)
     throw new lacasa.PackABoxHelper.NoReturnControl
   }
 
   // override def isLocal: Boolean = true
-  // override def sendSystem(signal: internal.SystemMessage): Unit = sendSystemMessage(untyped.guardian, signal)
+  // override def sendSystem(signal: internal.SystemMessage): Unit = sendSystemMessage(unsafe.guardian, signal)
 
-  final override val path: ActorPath = RootActorPath(Address("akka", untyped.name)) / "user"
+  final override val path: ActorPath = RootActorPath(Address("akka", unsafe.name)) / "user"
 
-  override def toString: String = untyped.toString
+  override def toString: String = unsafe.toString
 
   // Members declared in akka.actor.typed.ActorSystem
-  // override def deadLetters[U]: ActorRef[U] = ActorRefAdapter(untyped.deadLetters)
+  // override def deadLetters[U]: ActorRef[U] = ActorRefAdapter(unsafe.deadLetters)
   // override def dispatchers: Dispatchers = new Dispatchers {
   //   override def lookup(selector: DispatcherSelector): ExecutionContextExecutor =
   //     selector match {
-  //       case DispatcherDefault(_)         ⇒ untyped.dispatcher
-  //       case DispatcherFromConfig(str, _) ⇒ untyped.dispatchers.lookup(str)
+  //       case DispatcherDefault(_)         ⇒ unsafe.dispatcher
+  //       case DispatcherFromConfig(str, _) ⇒ unsafe.dispatchers.lookup(str)
   //     }
-  //   override def shutdown(): Unit = () // there was no shutdown in untyped Akka
+  //   override def shutdown(): Unit = () // there was no shutdown in unsafe Akka
   // }
-  // override def dynamicAccess: a.DynamicAccess = untyped.dynamicAccess
-  // implicit override def executionContext: scala.concurrent.ExecutionContextExecutor = untyped.dispatcher
-  // override val log: Logger = new LoggerAdapterImpl(untyped.eventStream, getClass, name, untyped.logFilter)
-  // override def logConfiguration(): Unit = untyped.logConfiguration()
-  override def name: String = untyped.name
-  // override def scheduler: akka.actor.Scheduler = untyped.scheduler
-  // override def settings: Settings = new Settings(untyped.settings)
-  // override def startTime: Long = untyped.startTime
-  // override def threadFactory: java.util.concurrent.ThreadFactory = untyped.threadFactory
-  // override def uptime: Long = untyped.uptime
-  // override def printTree: String = untyped.printTree
+  // override def dynamicAccess: a.DynamicAccess = unsafe.dynamicAccess
+  // implicit override def executionContext: scala.concurrent.ExecutionContextExecutor = unsafe.dispatcher
+  // override val log: Logger = new LoggerAdapterImpl(unsafe.eventStream, getClass, name, unsafe.logFilter)
+  // override def logConfiguration(): Unit = unsafe.logConfiguration()
+  override def name: String = unsafe.name
+  // override def scheduler: akka.actor.Scheduler = unsafe.scheduler
+  // override def settings: Settings = new Settings(unsafe.settings)
+  // override def startTime: Long = unsafe.startTime
+  // override def threadFactory: java.util.concurrent.ThreadFactory = unsafe.threadFactory
+  // override def uptime: Long = unsafe.uptime
+  // override def printTree: String = unsafe.printTree
 
   import akka.dispatch.ExecutionContexts.sameThreadExecutionContext
 
   override def terminate(): scala.concurrent.Future[Terminated] =
-    untyped.terminate()//.map(t ⇒ Terminated(ActorRefAdapter(t.actor))(null))(sameThreadExecutionContext)
+    unsafe.terminate()//.map(t ⇒ Terminated(ActorRefAdapter(t.actor))(null))(sameThreadExecutionContext)
   // override lazy val whenTerminated: scala.concurrent.Future[akka.actor.typed.Terminated] =
-  //   untyped.whenTerminated.map(t ⇒ Terminated(ActorRefAdapter(t.actor))(null))(sameThreadExecutionContext)
+  //   unsafe.whenTerminated.map(t ⇒ Terminated(ActorRefAdapter(t.actor))(null))(sameThreadExecutionContext)
   // override lazy val getWhenTerminated: CompletionStage[akka.actor.typed.Terminated] =
   //   FutureConverters.toJava(whenTerminated)
 
   def systemActorOf(name: String, props: Props)(implicit timeout: Timeout): Future[ActorRef] = {
-    val ref = untyped.systemActorOf(PropsAdapter(props), name)
+    val ref = unsafe.systemActorOf(PropsAdapter(props), name)
     Future.successful(ActorRefAdapter(ref))
   }
 
   override def actorOf(props: Props): ActorRef =
-    ActorRefAdapter(untyped.actorOf(PropsAdapter(props)))
+    ActorRefAdapter(unsafe.actorOf(PropsAdapter(props)))
 
   override def actorOf(props: Props, name: String): ActorRef =
-    ActorRefAdapter(untyped.actorOf(PropsAdapter(props), name))
+    ActorRefAdapter(unsafe.actorOf(PropsAdapter(props), name))
 
 }
 
 private object ActorSystemAdapter {
-  def apply(untyped: akka.actor.ActorSystem): ActorSystem = AdapterExtension(untyped).adapter
+  def apply(unsafe: akka.actor.ActorSystem): ActorSystem = AdapterExtension(unsafe).adapter
 
   // to make sure we do never create more than one adapter for the same actor system
   class AdapterExtension(system: akka.actor.ExtendedActorSystem) extends akka.actor.Extension {

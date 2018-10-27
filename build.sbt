@@ -106,6 +106,17 @@ lazy val examples = (project in file("examples"))
   pluginSettings
 )
 
+lazy val savina = (project in file("savina"))
+.dependsOn(akka)
+.dependsOn(plugin)
+.settings (
+  name := "lacasa-savina",
+  commonSettings,
+  pluginSettings,
+  resolvers += "Habanero Repository - Rice University" at "http://www.cs.rice.edu/~vs3/hjlib/code/maven-repo", 
+  libraryDependencies += "habanero-java-lib" % "habanero-java-lib" % "0.1.3"
+)
+
 def publishLocation(version: String) = {
   val nexus = "https://oss.sonatype.org/"
   if (version.trim.endsWith("SNAPSHOT"))

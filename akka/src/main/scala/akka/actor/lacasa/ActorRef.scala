@@ -11,7 +11,7 @@ object ActorRef {
   implicit def actorRefIsSafe[T <: SafeActorRef]: lacasa.Safe[T] = new lacasa.Safe[T] {}
 
   implicit final class SafeActorRefOps(val ref: SafeActorRef) extends AnyVal {
-    def ![T: lacasa.Safe](msg: T): Unit = ref.tell(msg)
+    def ![T: lacasa.Safe](msg: T)(implicit sender: ActorRef = ActorRef.noSender): Unit = ref.tell(msg, sender)
   }
 
   implicit final class ActorRefOps(val ref: ActorRef) extends AnyVal {
@@ -36,7 +36,7 @@ object ActorRef {
 
 trait SafeActorRef extends java.lang.Comparable[ActorRef] {
 
-  def tell[T: lacasa.Safe](msg: T): Unit
+  def tell[T: lacasa.Safe](msg: T, sender: ActorRef): Unit
 
   def path: ActorPath
 }
@@ -76,9 +76,8 @@ private[akka] class ActorRefAdapter(val unsafe: AkkaActorRef)
 
   override def path: ActorPath = unsafe.path
 
-  override def tell[T: lacasa.Safe](msg: T): Unit = {
-    unsafe ! new SafeWrapper(msg)
-  }
+  override def tell[T: lacasa.Safe](msg: T, sender: ActorRef): Unit =
+    unsafe.tell(new SafeWrapper(msg), ActorRefAdapter.toUnsafe(sender))
 
   // TODO: Work around package private methods in lacasa/akka internals,
   // e.g., by creating an unsafe evidence that needs to exist in order to
@@ -92,10 +91,10 @@ private[akka] class ActorRefAdapter(val unsafe: AkkaActorRef)
 object ActorRefAdapter {
   def apply(unsafe: AkkaActorRef): ActorRef = new ActorRefAdapter(unsafe)
 
-  def toUntyped(ref: ActorRef): AkkaActorRef =
+  def toUnsafe(ref: ActorRef): AkkaActorRef =
     ref match {
       case adapter: ActorRefAdapter   ⇒ adapter.unsafe
-      case system: ActorSystemAdapter ⇒ system.untyped.guardian
+      case system: ActorSystemAdapter ⇒ system.unsafe.guardian
       case _ ⇒
         throw new UnsupportedOperationException("only adapted unsafe ActorRefs permissible " +
           s"($ref of class ${ref.getClass.getName})")
