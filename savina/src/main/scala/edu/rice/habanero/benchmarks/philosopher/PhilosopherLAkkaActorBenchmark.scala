@@ -2,21 +2,21 @@ package edu.rice.habanero.benchmarks.philosopher
 
 import java.util.concurrent.atomic.{AtomicBoolean, AtomicLong}
 
-import akka.actor.{ActorRef, Props}
-import edu.rice.habanero.actors.{AkkaActor => Actor, AkkaActorState => ActorState}
+import akka.lacasa.actor.{ActorRef, Props, Safe}
+import edu.rice.habanero.actors.{LAkkaActor => Actor, LAkkaActorState => ActorState}
 import edu.rice.habanero.benchmarks.{Benchmark, BenchmarkRunner}
 
 /**
  *
  * @author <a href="http://shams.web.rice.edu/">Shams Imam</a> (shams@rice.edu)
  */
-object PhilosopherAkkaActorBenchmark {
+object PhilosopherLAkkaActorBenchmark {
 
   def main(args: Array[String]) {
-    BenchmarkRunner.runBenchmark(args, new PhilosopherAkkaActorBenchmark)
+    BenchmarkRunner.runBenchmark(args, new PhilosopherLAkkaActorBenchmark)
   }
 
-  private final class PhilosopherAkkaActorBenchmark extends Benchmark {
+  private final class PhilosopherLAkkaActorBenchmark extends Benchmark {
     def initialize(args: Array[String]) {
       PhilosopherConfig.parseArgs(args)
     }
@@ -55,7 +55,7 @@ object PhilosopherAkkaActorBenchmark {
     }
   }
 
-  sealed trait Message
+  sealed trait Message extends Safe
 
   case class StartMessage() extends Message
 

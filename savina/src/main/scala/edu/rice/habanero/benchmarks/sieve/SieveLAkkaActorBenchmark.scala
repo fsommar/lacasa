@@ -1,20 +1,20 @@
 package edu.rice.habanero.benchmarks.sieve
 
-import akka.actor.{ActorRef, Props}
-import edu.rice.habanero.actors.{AkkaActor => Actor, AkkaActorState => ActorState}
+import akka.lacasa.actor.{ActorRef, Props, Safe}
+import edu.rice.habanero.actors.{LAkkaActor => Actor, LAkkaActorState => ActorState}
 import edu.rice.habanero.benchmarks.{Benchmark, BenchmarkRunner}
 
 /**
  *
  * @author <a href="http://shams.web.rice.edu/">Shams Imam</a> (shams@rice.edu)
  */
-object SieveAkkaActorBenchmark {
+object SieveLAkkaActorBenchmark {
 
   def main(args: Array[String]) {
-    BenchmarkRunner.runBenchmark(args, new SieveAkkaActorBenchmark)
+    BenchmarkRunner.runBenchmark(args, new SieveLAkkaActorBenchmark)
   }
 
-  private final class SieveAkkaActorBenchmark extends Benchmark {
+  private final class SieveLAkkaActorBenchmark extends Benchmark {
     def initialize(args: Array[String]) {
       SieveConfig.parseArgs(args)
     }
@@ -42,7 +42,7 @@ object SieveAkkaActorBenchmark {
     }
   }
 
-  sealed trait Message
+  sealed trait Message extends Safe
 
   case class LongBox(value: Long) extends Message
 
